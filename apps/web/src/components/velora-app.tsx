@@ -118,6 +118,7 @@ export function Header() {
           ["Professionals", "/professionals"],
           ["Book", "/book"],
           ["Queue", "/queue"],
+          ["Privé", "/premium"],
           ["Contact", "/contact"],
         ].map(([n, h]) => (
           <Link

@@ -4,12 +4,13 @@ import { createHmac, timingSafeEqual } from "crypto";
 /** Scoped, expiring capabilities for anonymous customer receipts. Never use display tokens as credentials. */
 @Injectable()
 export class ReceiptService {
-  issue(kind: "booking" | "queue", tenantId: string, id: string) {
-    const expires = Math.floor(Date.now() / 1000) + 7 * 86400;
+  issue(kind: "booking" | "queue" | "payment", tenantId: string, id: string) {
+    const expires =
+      Math.floor(Date.now() / 1000) + (kind === "payment" ? 30 : 7) * 86400;
     return `${expires}.${this.signature(kind, tenantId, id, expires)}`;
   }
   verify(
-    kind: "booking" | "queue",
+    kind: "booking" | "queue" | "payment",
     tenantId: string,
     id: string,
     receipt?: string,

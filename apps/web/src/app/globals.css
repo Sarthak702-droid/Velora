@@ -4269,3 +4269,50 @@ select {
     grid-template-columns: 1fr;
   }
 }
+.premium-hero {
+  padding: 38px 0 30px;
+  max-width: 760px;
+}
+.premium-hero h1 {
+  font-size: clamp(42px, 5vw, 70px);
+  line-height: 1.1;
+}
+.premium-hero p {
+  line-height: 1.7;
+}
+.premium-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+.premium-grid textarea {
+  min-height: 110px;
+}
+.premium-membership {
+  background: linear-gradient(135deg, #f6f1e8, #fffdfa);
+}
+.premium-lock {
+  padding: 22px;
+  background: #f6f1e8;
+  border-radius: 12px;
+  line-height: 1.7;
+}
+.premium-match {
+  border-top: 1px solid #c7a56a55;
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.premium-page .button {
+  margin-top: 15px;
+}
+.premium-page p {
+  line-height: 1.7;
+}
+@media (max-width: 768px) {
+  .premium-grid {
+    grid-template-columns: 1fr;
+  }
+  .premium-hero {
+    padding-top: 20px;
+  }
+}

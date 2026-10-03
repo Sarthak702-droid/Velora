@@ -545,6 +545,9 @@ model Payment {
   amount                  Float
   currency                String                  @default("INR")
   status                  PaymentStatus           @default(NOT_REQUIRED)
+  purpose                 String                  @default("DEPOSIT")
+  premiumExpiresAt        DateTime?
+  premiumProfile          Json?
   provider                String                  @default("RAZORPAY")
   orderId                 String?
   paymentId               String?

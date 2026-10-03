@@ -5,6 +5,7 @@ export function generateStaticParams() {
     "services",
     "professionals",
     "book",
+    "premium",
     "queue",
     "queue/join",
     "contact",

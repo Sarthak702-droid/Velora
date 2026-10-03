@@ -34,6 +34,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Button, Dialog } from "@velora/ui";
+import { PremiumApp } from "./premium-app";
 import { Header, Logo } from "./velora-app";
 import {
   request,
@@ -2780,6 +2781,8 @@ export function LiveApp() {
           )}
           {path === "/" ? (
             <Home />
+          ) : path === "/premium" ? (
+            <PremiumApp salon={salon.data} branch={branch} />
           ) : path === "/book" ? (
             <CustomerBookingGate key={branch.id} />
           ) : path === "/queue/join" ? (

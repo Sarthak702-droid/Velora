@@ -790,3 +790,115 @@ test("surprise discovery respects budget, explicitly adds services and repeat bo
   ).toHaveAttribute("aria-pressed", "false");
   await stranger.close();
 });
+
+test("premium server gates, saved passport, concierge and no fabricated test checkout", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/premium");
+  const config = await call(page, "payments/config");
+  expect(config.status).toBe(200);
+  expect(config.json.data.mode).toBe("test");
+  await expect(
+    page.getByRole("heading", { name: "My Signature Look", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Signature look name")).toHaveCount(0);
+  const publicPassport = await call(
+    page,
+    `payments/${fixture.premiumPaidId}/passport`,
+  );
+  expect(publicPassport.status).toBe(403);
+  for (const width of [390, 768, 1448]) {
+    await page.setViewportSize({ width, height: 1086 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBeTruthy();
+  }
+  await context.addCookies([
+    {
+      name: `velora_payment_${fixture.premiumPendingId}`,
+      value: fixture.premiumPendingReceipt,
+      url: page.url().replace("/premium", "/api/v1"),
+      httpOnly: true,
+      sameSite: "Strict",
+    },
+  ]);
+  const pendingPassport = await call(
+    page,
+    `payments/${fixture.premiumPendingId}/passport`,
+  );
+  expect(pendingPassport.status).toBe(403);
+  const forged = await call(
+    page,
+    `payments/${fixture.premiumPendingId}/verify`,
+    "POST",
+    {
+      paymentId: "pay_forged",
+      orderId: "order_fixture_pending",
+      signature: "a".repeat(64),
+    },
+  );
+  expect(forged.status).not.toBe(200);
+  expect(
+    (await call(page, `payments/${fixture.premiumPendingId}/status`)).json.data
+      .status,
+  ).toBe("PENDING");
+  await context.addCookies([
+    {
+      name: `velora_payment_${fixture.premiumPaidId}`,
+      value: fixture.premiumPaidReceipt,
+      url: page.url().replace("/premium", "/api/v1"),
+      httpOnly: true,
+      sameSite: "Strict",
+    },
+  ]);
+  await page.evaluate(
+    ({ id, tenant }) => localStorage.setItem(`velora-premium:${tenant}`, id),
+    { id: fixture.premiumPaidId, tenant: fixture.tenantId },
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Welcome to Privé", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Signature look name").fill("My Signature Cut");
+  await page
+    .getByLabel("Style notes")
+    .fill("Short sides, keep the top longer.");
+  await page.getByLabel("Salon preferences").fill("Quiet visit.");
+  await page.getByRole("button", { name: "Save My Look" }).click();
+  await expect(
+    page.getByText("Your signature look is saved.", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Signature look name")).toHaveValue(
+    "My Signature Cut",
+  );
+  await page.getByLabel("Your budget (INR)").fill("700");
+  await page.getByLabel("Available minutes").fill("40");
+  await page.getByRole("button", { name: "Find My Service Match" }).click();
+  await expect(
+    page
+      .locator(".premium-match")
+      .getByRole("heading", { name: "Integration Haircut", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".premium-match")).toHaveCount(1);
+  expect(await page.evaluate(() => document.cookie)).not.toContain(
+    "velora_payment_",
+  );
+  const otherBranch = await call(
+    page,
+    `payments/${fixture.premiumPaidId}/concierge`,
+    "POST",
+    { branchId: "foreign-branch", categoryId: "", budget: 700, minutes: 40 },
+  );
+  expect(otherBranch.status).toBe(404);
+  const tampered = await call(
+    page,
+    `payments/${fixture.premiumPaidId}/passport`,
+    "PUT",
+    { lookName: "Injection", styleNotes: "", preferences: "", active: true },
+  );
+  expect(tampered.status).toBe(400);
+});

@@ -63,11 +63,30 @@ async function forward(
     /^bookings\/([^/]+)(?:\/(?:cancel|reschedule|availability))?$/,
   );
   const queue = route.match(/^queue\/(?:track\/([^/]+)|([^/]+)\/leave)$/);
-  const kind = booking ? "booking" : queue ? "queue" : "";
-  const id = booking?.[1] || queue?.[1] || queue?.[2];
+  const payment = route.match(
+    /^payments\/([^/]+)\/(?:verify|status|passport|concierge|checkout)$/,
+  );
+  const kind = payment ? "payment" : booking ? "booking" : queue ? "queue" : "";
+  const id = payment?.[1] || booking?.[1] || queue?.[1] || queue?.[2];
   if (id) {
     const receipt = req.cookies.get(`velora_${kind}_${id}`)?.value;
     if (receipt) headers.set("x-private-receipt", receipt);
+  }
+  const requestBody = ["GET", "HEAD"].includes(req.method)
+    ? undefined
+    : await req.text();
+  if (route === "payments/deposit-order" && requestBody) {
+    try {
+      const body = JSON.parse(requestBody);
+      if (typeof body.appointmentId === "string") {
+        const receipt = req.cookies.get(
+          `velora_booking_${body.appointmentId}`,
+        )?.value;
+        if (receipt) headers.set("x-private-receipt", receipt);
+      }
+    } catch {
+      return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
+    }
   }
   try {
     const response = await fetch(
@@ -75,9 +94,7 @@ async function forward(
       {
         method: req.method,
         headers,
-        body: ["GET", "HEAD"].includes(req.method)
-          ? undefined
-          : await req.text(),
+        body: requestBody,
         cache: "no-store",
         signal: AbortSignal.timeout(15000),
         redirect: "error",
@@ -111,9 +128,14 @@ async function forward(
       );
     if (receipt && data.id)
       res.cookies.set(
-        `velora_${route === "queue/join" ? "queue" : "booking"}_${data.id}`,
+        `velora_${route.startsWith("payments/") ? "payment" : route === "queue/join" ? "queue" : "booking"}_${data.id}`,
         receipt,
-        cookieOptions,
+        {
+          ...cookieOptions,
+          maxAge: route.startsWith("payments/")
+            ? 30 * 86400
+            : cookieOptions.maxAge,
+        },
       );
     if (response.status === 401 && operational)
       res.cookies.set("velora_session", "", { ...cookieOptions, maxAge: 0 });
@@ -132,3 +154,5 @@ export const GET = forward;
 export const POST = forward;
 export const PATCH = forward;
 export const DELETE = forward;
+
+export const PUT = forward;
