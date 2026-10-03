@@ -2,10 +2,11 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "typecheck": { "dependsOn": ["^typecheck"] },
     "lint": {},
+    "test": {},
     "dev": { "cache": false, "persistent": true }
   }
 }

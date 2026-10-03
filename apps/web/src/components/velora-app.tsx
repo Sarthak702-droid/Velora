@@ -458,7 +458,7 @@ function CustomerFields({
     handleSubmit,
     formState: { errors },
   } = useForm<{ name: string; phone: string }>({
-    resolver: zodResolver(customerSchema),
+    resolver: zodResolver(customerSchema as any),
     defaultValues: defaults,
   });
   return (

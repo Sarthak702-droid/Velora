@@ -3,12 +3,19 @@
   "private": true,
   "packageManager": "pnpm@10.28.2",
   "scripts": {
-    "dev": "pnpm --filter @velora/web dev",
+    "dev": "turbo dev",
+    "dev:api": "pnpm --filter @velora/api dev",
+    "dev:web": "pnpm --filter @velora/web dev",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
-    "test": "pnpm --filter @velora/web test",
-    "test:e2e": "pnpm --filter @velora/web test:e2e"
+    "test": "turbo test",
+    "test:api": "pnpm --filter @velora/api test",
+    "test:web": "pnpm --filter @velora/web test",
+    "test:e2e": "pnpm --filter @velora/web test:e2e",
+    "prisma:generate": "pnpm --filter @velora/api exec prisma generate",
+    "prisma:push": "pnpm --filter @velora/api exec prisma db push",
+    "prisma:seed": "pnpm --filter @velora/api exec ts-node prisma/seed.ts"
   },
   "devDependencies": {
     "prettier": "3.8.1",
