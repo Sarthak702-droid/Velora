@@ -130,9 +130,13 @@ export function Header() {
           </Link>
         ))}
       </nav>
-      <Link href="/book" className="button gold header-cta">
+      <Link
+        href="/book"
+        className="button gold header-cta"
+        aria-label="Book Appointment"
+      >
         <CalendarDays size={19} />
-        Book Appointment
+        <span className="header-cta-label">Book Appointment</span>
       </Link>
     </header>
   );

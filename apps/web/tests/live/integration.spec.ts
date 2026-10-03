@@ -35,14 +35,37 @@ async function call(
     { path, method, body, tenantId: fixture.tenantId, staff },
   );
 }
+async function customerLogin(page: Page) {
+  await page.getByRole("button", { name: "Use demo number" }).click();
+  await page.getByRole("button", { name: "Continue with Phone" }).click();
+  await page.getByLabel("Demo code", { exact: true }).fill("123456");
+  await page.getByRole("button", { name: "Continue to Booking" }).click();
+}
+async function nextStep(page: Page) {
+  await page.getByRole("button", { name: "Continue →", exact: true }).click();
+}
 async function book(page: Page, name: string, days = 7) {
   await page.goto("/book");
+  await customerLogin(page);
   await page.getByRole("button", { name: /Integration Haircut/ }).click();
+  await nextStep(page);
   await page.getByLabel("Preferred professional").selectOption(fixture.staffId);
+  await nextStep(page);
   await page.getByLabel("Appointment date").fill(future(days));
   await page.getByRole("button", { name: "09:00", exact: true }).click();
+  await nextStep(page);
   await page.getByLabel("Your name", { exact: true }).fill(name);
   await page.getByLabel("Phone number", { exact: true }).fill("+910000000123");
+  await nextStep(page);
+  await page.getByLabel("Street address").fill("42 Test Street");
+  await page.getByLabel("City", { exact: true }).fill("Mumbai");
+  await page.getByLabel("Postal code").fill("400001");
+  await page.getByLabel("Country", { exact: true }).fill("India");
+  await nextStep(page);
+  await expect(
+    page.getByText("42 Test Street, Mumbai, 400001, India", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: /Confirm Booking/ }).click();
   await expect(page).toHaveURL(/customer\/bookings/);
   await expect(page.getByText("Booking reference:")).toBeVisible();
@@ -109,6 +132,12 @@ test("booking persists in PostgreSQL, survives refresh, reschedules, and cancels
   await page.getByRole("button", { name: "Save New Time" }).click();
   await expect(page.getByLabel("New date")).toBeHidden();
   const rescheduled = await call(page, `bookings/${id}`);
+  expect(rescheduled.json.data.notes).toContain(
+    "Customer address: 42 Test Street, Mumbai, 400001, India",
+  );
+  expect(rescheduled.json.data.notes).toContain(
+    "Preferred contact: Phone. First visit: Yes.",
+  );
   expect(rescheduled.json.data.startTime).toBe(`${future(8)}T04:30:00.000Z`);
   await page
     .getByLabel("Cancellation reason")
@@ -123,12 +152,15 @@ test("combined service duration, incompatible professionals, breaks and conflict
   page,
 }) => {
   await page.goto("/book");
+  await customerLogin(page);
   await page.getByRole("button", { name: /Integration Haircut/ }).click();
   await page.getByRole("button", { name: /Integration Hair Spa/ }).click();
+  await nextStep(page);
   await expect(
     page.getByLabel("Preferred professional").locator("option"),
   ).toHaveCount(2);
   await page.getByLabel("Preferred professional").selectOption(fixture.staffId);
+  await nextStep(page);
   await page.getByLabel("Appointment date").fill(future(9));
   await expect(
     page.getByRole("button", { name: "09:00", exact: true }),
@@ -511,4 +543,101 @@ test("staff layouts fit mobile/tablet and keyboard dialog focus returns", async 
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect(open).toBeFocused();
+});
+
+test("header booking requires demo login; sign-up, validation, back navigation and logout", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/contact");
+  // The same header CTA used at desktop remains the public entry point.
+  await page.locator(".header-cta").click();
+  await expect(
+    page.getByRole("heading", { name: "Welcome back" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Appointment date")).toHaveCount(0);
+  await page.getByRole("button", { name: "Sign up", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Welcome to Velora" }),
+  ).toBeVisible();
+  await page.getByLabel("Mobile number").fill("+919999999999");
+  await page.getByRole("button", { name: "Continue with Phone" }).click();
+  await expect(page.locator(".customer-auth-card [role=alert]")).toContainText(
+    "Use the demo number",
+  );
+  await page.getByRole("button", { name: "Use demo number" }).click();
+  await page.getByRole("button", { name: "Continue with Phone" }).click();
+  await page.getByLabel("Demo code", { exact: true }).fill("000000");
+  await page.getByRole("button", { name: "Continue to Booking" }).click();
+  await expect(page.locator(".customer-auth-card [role=alert]")).toContainText(
+    "123456",
+  );
+  await page.getByLabel("Demo code", { exact: true }).fill("123456");
+  await page.getByRole("button", { name: "Continue to Booking" }).click();
+  await expect(
+    page.getByRole("button", { name: "Continue →", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: /Integration Haircut/ }).click();
+  await nextStep(page);
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: /Integration Haircut/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBeTruthy();
+  await nextStep(page);
+  await nextStep(page);
+  await page.getByLabel("Appointment date").fill(future(16));
+  await page.getByRole("button", { name: "09:00", exact: true }).click();
+  await nextStep(page);
+  await nextStep(page);
+  expect(
+    await page
+      .getByLabel("Your name", { exact: true })
+      .evaluate((el: HTMLInputElement) => el.validity.valueMissing),
+  ).toBeTruthy();
+  await page.getByLabel("Your name", { exact: true }).fill("  ");
+  await nextStep(page);
+  await expect(page.locator(".booking-layout .live-error")).toContainText(
+    "full name",
+  );
+  await page.getByLabel("Your name", { exact: true }).fill("Demo Customer");
+  await nextStep(page);
+  await page.getByLabel("Street address").fill("42 Demo Street");
+  await page.getByLabel("City", { exact: true }).fill("Mumbai");
+  await page.getByLabel("Postal code").fill("400001");
+  await page.getByLabel("Country", { exact: true }).fill("India");
+  await page.getByLabel("Preferred contact").selectOption("Email");
+  await expect(
+    page.getByRole("button", { name: "Continue →", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page.getByLabel("Your name", { exact: true })).toHaveValue(
+    "Demo Customer",
+  );
+  await page.getByLabel("Email (optional)").fill("demo@example.com");
+  await nextStep(page);
+  await expect(page.getByLabel("Street address")).toHaveValue("42 Demo Street");
+  await nextStep(page);
+  await expect(
+    page.getByRole("heading", { name: "Review Your Appointment" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Confirm Booking/ }),
+  ).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await expect(
+    page.getByRole("button", { name: /Confirm Booking/ }),
+  ).toBeEnabled();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Log out", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Log out", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Welcome back" }),
+  ).toBeVisible();
 });

@@ -6,6 +6,7 @@ import {
   useContext,
   useState,
   useEffect,
+  useRef,
   type FormEvent,
 } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -323,7 +324,9 @@ function Selection({
   setIds,
   staffId,
   setStaffId,
+  step,
 }: {
+  step?: number;
   ids: string[];
   setIds: (v: string[]) => void;
   staffId: string;
@@ -344,43 +347,50 @@ function Selection({
   }
   return (
     <>
-      <section className="panel live-section">
-        <h2>1. Select Services</h2>
-        <p>Choose one or more services for your visit.</p>
-        <div className="service-grid">
-          {services.map((s) => (
-            <ServiceCard
-              key={s.id}
-              service={s}
-              selected={ids.includes(s.id)}
-              toggle={() => toggle(s.id)}
-            />
-          ))}
-        </div>
-      </section>
-      <section className="panel live-section">
-        <h2>2. Select Your Stylist</h2>
-        <p>
-          Only professionals who provide all selected services are available.
-        </p>
-        <label>
-          Preferred professional
-          <select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-            <option value="any">Any Available</option>
-            {eligible.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} — {s.title}
-              </option>
+      {(step === undefined || step === 0) && (
+        <section className="panel live-section">
+          <h2>1. Select Services</h2>
+          <p>Choose one or more services for your visit.</p>
+          <div className="service-grid">
+            {services.map((s) => (
+              <ServiceCard
+                key={s.id}
+                service={s}
+                selected={ids.includes(s.id)}
+                toggle={() => toggle(s.id)}
+              />
             ))}
-          </select>
-        </label>
-        {ids.length > 0 && !eligible.length && (
-          <p role="alert" className="live-error">
-            No professional provides this combination. Adjust your selected
-            services.
+          </div>
+        </section>
+      )}
+      {(step === undefined || step === 1) && (
+        <section className="panel live-section">
+          <h2>2. Select Your Stylist</h2>
+          <p>
+            Only professionals who provide all selected services are available.
           </p>
-        )}
-      </section>
+          <label>
+            Preferred professional
+            <select
+              value={staffId}
+              onChange={(e) => setStaffId(e.target.value)}
+            >
+              <option value="any">Any Available</option>
+              {eligible.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} — {s.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {ids.length > 0 && !eligible.length && (
+            <p role="alert" className="live-error">
+              No professional provides this combination. Adjust your selected
+              services.
+            </p>
+          )}
+        </section>
+      )}
     </>
   );
 }
@@ -461,6 +471,178 @@ function useReceipts(kind: "booking" | "queue") {
   }, [kind]);
   return ids;
 }
+const DEMO_PHONE = "+919000000000";
+function CustomerBookingGate() {
+  const { salon } = useSalon();
+  const [signedIn, setSignedIn] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [mode, setMode] = useState("Log in");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [codeStep, setCodeStep] = useState(false);
+  const [error, setError] = useState("");
+  const key = `velora-demo-customer:${salon.id}`;
+  useEffect(() => {
+    setSignedIn(sessionStorage.getItem(key) === DEMO_PHONE);
+    setReady(true);
+  }, [key]);
+  function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    if (phone.replace(/[\s()-]/g, "") !== DEMO_PHONE) {
+      setError("Use the demo number +91 90000 00000 for now.");
+      return;
+    }
+    if (!codeStep) {
+      setCodeStep(true);
+      return;
+    }
+    if (code !== "123456") {
+      setError("Enter the demo code 123456.");
+      return;
+    }
+    sessionStorage.setItem(key, DEMO_PHONE);
+    setSignedIn(true);
+  }
+  if (!ready)
+    return (
+      <p role="status" className="live-content">
+        Preparing customer login…
+      </p>
+    );
+  if (signedIn)
+    return (
+      <>
+        <div className="customer-session">
+          <span>Demo customer · +91 90000 00000</span>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              sessionStorage.removeItem(key);
+              setSignedIn(false);
+              setCodeStep(false);
+              setCode("");
+            }}
+          >
+            Log out
+          </Button>
+        </div>
+        <Booking />
+      </>
+    );
+  return (
+    <section className="customer-auth">
+      <div className="customer-auth-intro">
+        <div className="eyebrow">Your time. Your beauty.</div>
+        <h1>
+          A little closer to
+          <br />
+          <em>your next visit.</em>
+        </h1>
+        <p>Sign in to choose your services and book a time that suits you.</p>
+        <img src="/brand/symbol.svg" alt="" />
+      </div>
+      <form className="panel customer-auth-card" onSubmit={submit}>
+        <div className="customer-auth-tabs">
+          {["Log in", "Sign up"].map((v) => (
+            <button
+              type="button"
+              aria-pressed={mode === v}
+              key={v}
+              onClick={() => {
+                setMode(v);
+                setError("");
+              }}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+        <h2>
+          {codeStep
+            ? "Enter your demo code"
+            : mode === "Log in"
+              ? "Welcome back"
+              : "Welcome to Velora"}
+        </h2>
+        <p>
+          {codeStep
+            ? "Enter 123456 to continue. No SMS has been sent."
+            : "Continue with your mobile number."}
+        </p>
+        <div className="demo-login-note">
+          <strong>Demo login</strong>
+          <p>
+            Number: +91 90000 00000
+            <br />
+            Code: 123456
+          </p>
+          <small>This is a simulated customer login for testing.</small>
+        </div>
+        <label>
+          Mobile number
+          <input
+            type="tel"
+            autoComplete="tel"
+            required
+            value={phone}
+            disabled={codeStep}
+            placeholder="+91 90000 00000"
+            onChange={(e) => setPhone(e.target.value)}
+          />
+        </label>
+        {!codeStep && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setPhone(DEMO_PHONE)}
+          >
+            Use demo number
+          </Button>
+        )}
+        {codeStep && (
+          <label>
+            Demo code
+            <input
+              autoFocus
+              inputMode="numeric"
+              autoComplete="off"
+              required
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </label>
+        )}
+        {error && (
+          <p role="alert" className="live-error">
+            {error}
+          </p>
+        )}
+        <Button type="submit">
+          {codeStep ? "Continue to Booking" : "Continue with Phone"} →
+        </Button>
+        {codeStep && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setCodeStep(false);
+              setError("");
+            }}
+          >
+            Change number
+          </Button>
+        )}
+        <p className="live-policy">
+          {mode === "Sign up"
+            ? "Your details will be collected in the booking steps."
+            : "Your booking details are kept on this browser through private booking receipts."}
+        </p>
+      </form>
+    </section>
+  );
+}
 function Booking({
   staff = false,
   onDone,
@@ -471,10 +653,57 @@ function Booking({
   const { salon, branch } = useSalon();
   const router = useRouter();
   const query = useQueryClient();
+  const [step, setStep] = useState(0);
+  const stepMain = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!staff) stepMain.current?.focus();
+  }, [step, staff]);
+  const [details, setDetails] = useState({
+    customerName: "",
+    customerPhone: "+919000000000",
+    customerEmail: "",
+    address: "",
+    city: "",
+    postalCode: "",
+    country: "",
+    notes: "",
+    contact: "Phone",
+    firstVisit: "Yes",
+  });
+  const [accepted, setAccepted] = useState(false);
+  const [stepError, setStepError] = useState("");
+  const steps = [
+    "Services",
+    "Stylist",
+    "Date & time",
+    "Your details",
+    "Address",
+    "Review",
+  ];
+  function next() {
+    setStep((v) => v + 1);
+  }
+  function field(key: keyof typeof details) {
+    return {
+      value: details[key],
+      onChange: (
+        e: React.ChangeEvent<
+          HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+        >,
+      ) => setDetails((v) => ({ ...v, [key]: e.target.value })),
+    };
+  }
   const [ids, setIds] = useState<string[]>([]);
   const [staffId, setStaffId] = useState("any");
   const [date, setDate] = useState(today(branch.timezone));
   const [slot, setSlot] = useState("");
+  const eligible = salon.staffProfiles.filter(
+    (s) =>
+      (!s.schedules ||
+        s.schedules.some((v) => v.branchId === branch.id && v.isWorkingDay)) &&
+      ids.every((id) => s.services.some((v) => v.serviceId === id)),
+  );
+
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("service");
     if (
@@ -518,12 +747,67 @@ function Booking({
     },
     onError: () => {
       setSlot("");
+      setStep(2);
       slots.refetch();
     },
   });
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (chosen) booking.mutate(visit(e.currentTarget, branch.id, ids));
+    setStepError("");
+    if (
+      !staff &&
+      step === 3 &&
+      (details.customerName.trim().length < 2 ||
+        !/^\+?[0-9]{8,15}$/.test(details.customerPhone.replace(/[\s()-]/g, "")))
+    ) {
+      setStepError(
+        "Enter your full name and a valid phone number including country code.",
+      );
+      return;
+    }
+    if (
+      !staff &&
+      step === 4 &&
+      [details.address, details.city, details.postalCode, details.country].some(
+        (v) => !v.trim(),
+      )
+    ) {
+      setStepError("Complete each address field before continuing.");
+      return;
+    }
+    if (!staff && step < 5) {
+      if (
+        (step === 0 && (!ids.length || !eligible.length)) ||
+        (step === 2 && !chosen) ||
+        (step === 4 &&
+          details.contact === "Email" &&
+          !details.customerEmail.trim())
+      )
+        return;
+      next();
+      return;
+    }
+    if (chosen && (staff || accepted))
+      booking.mutate(
+        staff
+          ? visit(e.currentTarget, branch.id, ids)
+          : {
+              branchId: branch.id,
+              serviceIds: ids,
+              customerName: details.customerName.trim(),
+              customerPhone: details.customerPhone.replace(/[\s()-]/g, ""),
+              ...(details.customerEmail.trim()
+                ? { customerEmail: details.customerEmail.trim() }
+                : {}),
+              notes: [
+                `Customer address: ${details.address.trim()}, ${details.city.trim()}, ${details.postalCode.trim()}, ${details.country.trim()}`,
+                `Preferred contact: ${details.contact}. First visit: ${details.firstVisit}.`,
+                details.notes.trim(),
+              ]
+                .filter(Boolean)
+                .join("\n"),
+            },
+      );
   }
   return (
     <>
@@ -540,8 +824,36 @@ function Booking({
         </p>
       </section>
       <form onSubmit={submit} className="booking-layout live-booking">
-        <main>
+        <main
+          ref={stepMain}
+          tabIndex={-1}
+          aria-label={
+            staff ? "Staff booking" : `Booking step ${step + 1}: ${steps[step]}`
+          }
+        >
+          {!staff && (
+            <>
+              <nav className="customer-stepper" aria-label="Booking progress">
+                {steps.map((label, i) => (
+                  <button
+                    key={label}
+                    type="button"
+                    disabled={i > step || booking.isPending}
+                    aria-current={i === step ? "step" : undefined}
+                    onClick={() => setStep(i)}
+                  >
+                    <span>{i + 1}</span>
+                    {label}
+                  </button>
+                ))}
+              </nav>
+              <p role="status">
+                Step {step + 1} of {steps.length}: {steps[step]}
+              </p>
+            </>
+          )}
           <Selection
+            step={staff ? undefined : step}
             ids={ids}
             setIds={(v) => {
               setIds(v);
@@ -553,47 +865,233 @@ function Booking({
               setSlot("");
             }}
           />
-          <section className="panel live-section">
-            <h2>3. Select Date & Time</h2>
-            <label>
-              Appointment date
-              <input
-                type="date"
-                min={today(branch.timezone)}
-                value={date}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  setSlot("");
-                }}
-                required
-              />
-            </label>
-            <ErrorNotice error={slots.error} />
-            {slots.isFetching && <p role="status">Checking available times…</p>}
-            <div className="live-slots">
-              {slots.data?.map((s) => (
-                <button
-                  key={s.time}
-                  type="button"
-                  aria-pressed={slot === s.time}
-                  className={slot === s.time ? "selected" : ""}
-                  onClick={() => setSlot(s.time)}
-                >
-                  {s.time}
-                </button>
-              ))}
-            </div>
-            {ids.length > 0 && slots.data?.length === 0 && (
-              <p>
-                No availability on this date. Try a different date or service
-                combination.
-              </p>
-            )}
-          </section>
-          <section className="panel live-section">
-            <h2>4. Your Details</h2>
-            <CustomerInputs />
-          </section>
+          {(staff || step === 2) && (
+            <section className="panel live-section">
+              <h2>3. Select Date & Time</h2>
+              <label>
+                Appointment date
+                <input
+                  type="date"
+                  min={today(branch.timezone)}
+                  value={date}
+                  onChange={(e) => {
+                    setDate(e.target.value);
+                    setSlot("");
+                  }}
+                  required
+                />
+              </label>
+              <ErrorNotice error={slots.error} />
+              {slots.isFetching && (
+                <p role="status">Checking available times…</p>
+              )}
+              <div className="live-slots">
+                {slots.data?.map((s) => (
+                  <button
+                    key={s.time}
+                    type="button"
+                    aria-pressed={slot === s.time}
+                    className={slot === s.time ? "selected" : ""}
+                    onClick={() => setSlot(s.time)}
+                  >
+                    {s.time}
+                  </button>
+                ))}
+              </div>
+              {ids.length > 0 && slots.data?.length === 0 && (
+                <p>
+                  No availability on this date. Try a different date or service
+                  combination.
+                </p>
+              )}
+            </section>
+          )}
+          {staff ? (
+            <section className="panel live-section">
+              <h2>4. Your Details</h2>
+              <CustomerInputs />
+            </section>
+          ) : (
+            <>
+              {step === 3 && (
+                <section className="panel live-section">
+                  <h2>Your Details</h2>
+                  <p>Tell us who the appointment is for.</p>
+                  <div className="live-fields">
+                    <label>
+                      Your name
+                      <input
+                        required
+                        minLength={2}
+                        maxLength={100}
+                        autoComplete="name"
+                        {...field("customerName")}
+                      />
+                    </label>
+                    <label>
+                      Phone number
+                      <input
+                        type="tel"
+                        required
+                        pattern="[+]?[0-9\s]{8,18}"
+                        autoComplete="tel"
+                        {...field("customerPhone")}
+                      />
+                    </label>
+                    <label>
+                      Email (optional)
+                      <input
+                        type="email"
+                        autoComplete="email"
+                        maxLength={254}
+                        {...field("customerEmail")}
+                      />
+                    </label>
+                    <label>
+                      First visit?
+                      <select {...field("firstVisit")}>
+                        <option>Yes</option>
+                        <option>No</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+              )}
+              {step === 4 && (
+                <section className="panel live-section">
+                  <h2>Your Address & Preferences</h2>
+                  <div className="live-fields">
+                    <label>
+                      Street address
+                      <input
+                        required
+                        maxLength={160}
+                        autoComplete="street-address"
+                        {...field("address")}
+                      />
+                    </label>
+                    <label>
+                      City
+                      <input
+                        required
+                        maxLength={60}
+                        autoComplete="address-level2"
+                        {...field("city")}
+                      />
+                    </label>
+                    <label>
+                      Postal code
+                      <input
+                        required
+                        maxLength={12}
+                        autoComplete="postal-code"
+                        {...field("postalCode")}
+                      />
+                    </label>
+                    <label>
+                      Country
+                      <input
+                        required
+                        maxLength={60}
+                        autoComplete="country-name"
+                        {...field("country")}
+                      />
+                    </label>
+                    <label>
+                      Preferred contact
+                      <select {...field("contact")}>
+                        <option>Phone</option>
+                        <option>Email</option>
+                      </select>
+                    </label>
+                    <label>
+                      Appointment notes (optional)
+                      <textarea
+                        rows={3}
+                        maxLength={300}
+                        placeholder="Style preferences or anything your stylist should know"
+                        {...field("notes")}
+                      />
+                    </label>
+                  </div>
+                  {details.contact === "Email" &&
+                    !details.customerEmail.trim() && (
+                      <p role="alert" className="live-error">
+                        Go back to Your Details to add an email address, or
+                        choose Phone.
+                      </p>
+                    )}
+                  <p className="live-policy">
+                    Contact preferences are recorded with your booking. No SMS
+                    or email is sent by this demo login.
+                  </p>
+                </section>
+              )}
+              {step === 5 && (
+                <section className="panel live-section">
+                  <h2>Review Your Appointment</h2>
+                  <p>
+                    {details.customerName} · {details.customerPhone}
+                  </p>
+                  {details.customerEmail && <p>{details.customerEmail}</p>}
+                  <p>
+                    {details.address}, {details.city}, {details.postalCode},{" "}
+                    {details.country}
+                  </p>
+                  <p>
+                    Preferred contact: {details.contact} · First visit:{" "}
+                    {details.firstVisit}
+                  </p>
+                  {details.notes && <p>{details.notes}</p>}
+                  <p>
+                    Your appointment is at {branch.name}, {branch.address},{" "}
+                    {branch.city}.
+                  </p>
+                  <label className="booking-consent">
+                    <input
+                      type="checkbox"
+                      required
+                      checked={accepted}
+                      onChange={(e) => setAccepted(e.target.checked)}
+                    />
+                    I agree to the booking and cancellation policy below and to
+                    providing these details to the salon for this appointment.
+                  </label>
+                </section>
+              )}
+              {stepError && (
+                <p role="alert" className="live-error">
+                  {stepError}
+                </p>
+              )}
+              <div className="customer-step-actions">
+                {step > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setStep((v) => v - 1)}
+                    disabled={booking.isPending}
+                  >
+                    Back
+                  </Button>
+                )}
+                {step < 5 && (
+                  <Button
+                    type="submit"
+                    disabled={
+                      (step === 0 && (!ids.length || !eligible.length)) ||
+                      (step === 2 && !chosen) ||
+                      (step === 4 &&
+                        details.contact === "Email" &&
+                        !details.customerEmail.trim())
+                    }
+                  >
+                    Continue →
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
         </main>
         <aside className="booking-summary panel">
           <h2>Booking Summary</h2>
@@ -633,9 +1131,14 @@ function Booking({
             </div>
           </div>
           <ErrorNotice error={booking.error} />
-          <Button type="submit" disabled={!chosen || booking.isPending}>
-            {booking.isPending ? "Confirming…" : "Confirm Booking"} →
-          </Button>
+          {(staff || step === 5) && (
+            <Button
+              type="submit"
+              disabled={!chosen || booking.isPending || (!staff && !accepted)}
+            >
+              {booking.isPending ? "Confirming…" : "Confirm Booking"} →
+            </Button>
+          )}
           <p className="live-policy">
             Availability is rechecked on confirmation. Free cancellation up to{" "}
             {salon.salonProfile.cancellationWindowHours} hours before your
@@ -1770,7 +2273,7 @@ export function LiveApp() {
           {path === "/" ? (
             <Home />
           ) : path === "/book" ? (
-            <Booking key={branch.id} />
+            <CustomerBookingGate key={branch.id} />
           ) : path === "/queue/join" ? (
             <JoinQueue key={branch.id} />
           ) : path === "/queue" ? (

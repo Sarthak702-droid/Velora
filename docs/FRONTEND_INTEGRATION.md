@@ -57,3 +57,11 @@ Do not run the fixture helper or end-to-end suite against a production database.
 The local production preview runs at `http://localhost:3000` against the updated API on port 4000. OTP delivery and messaging/payment provider configuration remain outside this integration. This is functional integration verification, not a comprehensive penetration test or production-security certification.
 
 Production smoke verification also passed for Home, Booking, Queue, Reception and Insights at 390px, 768px and 1448px, with no horizontal overflow or browser runtime errors. Staff login/logout was verified with Secure/HttpOnly cookies in the production build. Captures are saved under `docs/screenshots/integration/`. The public/staff responsive browser cases were rerun after final visual repairs and passed.
+
+## Customer login and sequential booking update
+
+The public `/book` route now begins with a clearly labelled dummy customer login/sign-up. Use `+91 90000 00000` and code `123456`; no SMS is sent. The wizard collects services, compatible stylist, date/time, contact details, address/preferences and a final review with booking-policy consent. Reception's staff booking dialog remains available without this demo gate.
+
+See [customer booking research and field mapping](CUSTOMER_BOOKING_RESEARCH.md) for primary sources and the address-to-appointment-notes mapping. This browser demo gate does not create real customer accounts or replace backend authorization.
+
+Validation: the 12 existing live integration scenarios passed with the new wizard, including persisted address/preferences, followed by the focused customer login/sign-up regression. All 23 unit/API tests, frontend TypeScript/lint and the optimized frontend production build passed. Production browser captures for login and services at 390/768/1448px are in `docs/screenshots/customer-booking/`; no horizontal overflow or browser runtime errors were observed.
