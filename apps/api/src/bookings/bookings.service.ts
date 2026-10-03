@@ -5,12 +5,12 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
-} from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { DynamicSlotEngine } from './dynamic-slot.engine';
-import { EventsGateway } from '../events/events.gateway';
-import { AuditService } from '../audit/audit.service';
-import { AppointmentStatus, UserRole } from '@prisma/client';
+} from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { DynamicSlotEngine } from "./dynamic-slot.engine";
+import { EventsGateway } from "../events/events.gateway";
+import { AuditService } from "../audit/audit.service";
+import { AppointmentStatus, UserRole, Prisma } from "@prisma/client";
 
 export interface CreateBookingDto {
   branchId: string;
@@ -41,6 +41,7 @@ export class BookingsService {
     serviceIds: string[],
     dateStr: string,
     staffId?: string,
+    excludeAppointmentId?: string,
   ) {
     return this.slotEngine.calculateAvailableSlots({
       tenantId,
@@ -48,12 +49,18 @@ export class BookingsService {
       serviceIds,
       dateStr,
       staffId,
+      excludeAppointmentId,
     });
   }
 
-  async createBooking(tenantId: string, dto: CreateBookingDto, actorId?: string, actorRole?: string) {
+  async createBooking(
+    tenantId: string,
+    dto: CreateBookingDto,
+    actorId?: string,
+    actorRole?: string,
+  ) {
     const { branchId, serviceIds, dateStr, timeStr } = dto;
-    const cleanPhone = dto.customerPhone.trim().replace(/\s+/g, '');
+    const cleanPhone = dto.customerPhone.trim().replace(/\s+/g, "");
 
     // 1. Fetch requested services
     const services = await this.prisma.service.findMany({
@@ -61,7 +68,9 @@ export class BookingsService {
     });
 
     if (services.length !== serviceIds.length) {
-      throw new BadRequestException('One or more selected services are unavailable');
+      throw new BadRequestException(
+        "One or more selected services are unavailable",
+      );
     }
 
     const totalDuration = services.reduce((sum, s) => sum + s.duration, 0);
@@ -69,8 +78,6 @@ export class BookingsService {
     const totalPrice = services.reduce((sum, s) => sum + s.price, 0);
 
     const bookingDate = new Date(`${dateStr}T00:00:00.000Z`);
-    const startTime = new Date(`${dateStr}T${timeStr}:00.000Z`);
-    const endTime = new Date(startTime.getTime() + (totalDuration + totalBuffer) * 60 * 1000);
 
     // 2. Concurrency Safety: Check available slots in real-time
     const availableSlots = await this.slotEngine.calculateAvailableSlots({
@@ -85,126 +92,146 @@ export class BookingsService {
     if (!matchingSlot) {
       const alternatives = availableSlots.slice(0, 3).map((s) => s.time);
       throw new ConflictException({
-        message: 'That slot was just booked or is unavailable.',
+        message: "That slot was just booked or is unavailable.",
         closestAvailable: alternatives,
       });
     }
 
     const assignedStaffId = matchingSlot.staffId;
+    const startTime = new Date(matchingSlot.timestamp);
+    const endTime = new Date(
+      startTime.getTime() + (totalDuration + totalBuffer) * 60000,
+    );
 
     // 3. Atomic Database Transaction: Reserve customer, appointment, services and history
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Re-verify no overlapping appointment exists for this staff inside transaction
-      const overlap = await tx.appointment.findFirst({
-        where: {
-          tenantId,
-          staffId: assignedStaffId,
-          date: bookingDate,
-          status: { in: ['CONFIRMED', 'CHECKED_IN', 'IN_SERVICE', 'WAITING'] },
-          OR: [
-            {
-              startTime: { lt: endTime },
-              endTime: { gt: startTime },
+    const result = await this.prisma
+      .$transaction(
+        async (tx) => {
+          // Re-verify no overlapping appointment exists for this staff inside transaction
+          const overlap = await tx.appointment.findFirst({
+            where: {
+              tenantId,
+              staffId: assignedStaffId,
+              date: bookingDate,
+              status: {
+                in: ["CONFIRMED", "CHECKED_IN", "IN_SERVICE", "WAITING"],
+              },
+              OR: [
+                {
+                  startTime: { lt: endTime },
+                  endTime: { gt: startTime },
+                },
+              ],
             },
-          ],
-        },
-      });
+          });
 
-      if (overlap) {
-        throw new ConflictException({
-          message: 'That slot was just booked by another customer.',
-          closestAvailable: availableSlots.filter((s) => s.time !== timeStr).slice(0, 3).map((s) => s.time),
-        });
-      }
+          if (overlap) {
+            throw new ConflictException({
+              message: "That slot was just booked by another customer.",
+              closestAvailable: availableSlots
+                .filter((s) => s.time !== timeStr)
+                .slice(0, 3)
+                .map((s) => s.time),
+            });
+          }
 
-      // Upsert Customer
-      let customer = await tx.customer.findUnique({
-        where: {
-          tenantId_phone: {
-            tenantId,
-            phone: cleanPhone,
-          },
-        },
-      });
-
-      if (!customer) {
-        customer = await tx.customer.create({
-          data: {
-            tenantId,
-            name: dto.customerName,
-            phone: cleanPhone,
-            email: dto.customerEmail,
-            preferredStaffId: assignedStaffId,
-            totalVisits: 1,
-            lastVisitAt: startTime,
-          },
-        });
-      } else {
-        customer = await tx.customer.update({
-          where: { id: customer.id },
-          data: {
-            name: dto.customerName || customer.name,
-            email: dto.customerEmail || customer.email,
-            preferredStaffId: assignedStaffId,
-            totalVisits: { increment: 1 },
-            lastVisitAt: startTime,
-          },
-        });
-      }
-
-      // Create Appointment
-      const appointment = await tx.appointment.create({
-        data: {
-          tenantId,
-          branchId,
-          customerId: customer.id,
-          staffId: assignedStaffId,
-          date: bookingDate,
-          startTime,
-          endTime,
-          totalDuration,
-          totalBuffer,
-          totalPrice,
-          status: AppointmentStatus.CONFIRMED,
-          notes: dto.notes,
-          services: {
-            create: services.map((s) => ({
-              serviceId: s.id,
-              price: s.price,
-              duration: s.duration,
-              buffer: s.buffer,
-            })),
-          },
-          history: {
-            create: {
-              fromStatus: null,
-              toStatus: AppointmentStatus.CONFIRMED,
-              actorId,
-              actorRole: actorRole || 'CUSTOMER',
-              reason: 'Advance booking created',
+          // Upsert Customer
+          let customer = await tx.customer.findUnique({
+            where: {
+              tenantId_phone: {
+                tenantId,
+                phone: cleanPhone,
+              },
             },
-          },
-        },
-        include: {
-          customer: true,
-          staff: true,
-          services: {
-            include: { service: true },
-          },
-        },
-      });
+          });
 
-      return appointment;
-    });
+          if (!customer) {
+            customer = await tx.customer.create({
+              data: {
+                tenantId,
+                name: dto.customerName,
+                phone: cleanPhone,
+                email: dto.customerEmail,
+                preferredStaffId: assignedStaffId,
+                totalVisits: 1,
+                lastVisitAt: startTime,
+              },
+            });
+          } else {
+            customer = await tx.customer.update({
+              where: { id: customer.id },
+              data: {
+                name: dto.customerName || customer.name,
+                email: dto.customerEmail || customer.email,
+                preferredStaffId: assignedStaffId,
+                totalVisits: { increment: 1 },
+                lastVisitAt: startTime,
+              },
+            });
+          }
+
+          // Create Appointment
+          const appointment = await tx.appointment.create({
+            data: {
+              tenantId,
+              branchId,
+              customerId: customer.id,
+              staffId: assignedStaffId,
+              date: bookingDate,
+              startTime,
+              endTime,
+              totalDuration,
+              totalBuffer,
+              totalPrice,
+              status: AppointmentStatus.CONFIRMED,
+              notes: dto.notes,
+              services: {
+                create: services.map((s) => ({
+                  serviceId: s.id,
+                  price: s.price,
+                  duration: s.duration,
+                  buffer: s.buffer,
+                })),
+              },
+              history: {
+                create: {
+                  fromStatus: null,
+                  toStatus: AppointmentStatus.CONFIRMED,
+                  actorId,
+                  actorRole: actorRole || "CUSTOMER",
+                  reason: "Advance booking created",
+                },
+              },
+            },
+            include: {
+              customer: true,
+              staff: true,
+              services: {
+                include: { service: true },
+              },
+            },
+          });
+
+          return appointment;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      )
+      .catch((error) => {
+        if (error.code === "P2034")
+          throw new ConflictException(
+            "This slot changed while confirming. Please choose another time.",
+          );
+        throw error;
+      });
 
     // 4. Audit Log & Real-time Notification
     await this.auditService.log({
       tenantId,
       branchId,
       actorId,
-      actorRole: actorRole || 'CUSTOMER',
-      action: 'BOOKING_CREATED',
-      entityType: 'Appointment',
+      actorRole: actorRole || "CUSTOMER",
+      action: "BOOKING_CREATED",
+      entityType: "Appointment",
       entityId: result.id,
       after: {
         startTime: result.startTime,
@@ -215,7 +242,7 @@ export class BookingsService {
     });
 
     this.eventsGateway.broadcastTimelineUpdated(branchId, {
-      type: 'BOOKING_CREATED',
+      type: "BOOKING_CREATED",
       appointmentId: result.id,
       staffId: assignedStaffId,
     });
@@ -249,7 +276,7 @@ export class BookingsService {
           include: { service: true },
         },
       },
-      orderBy: { startTime: 'asc' },
+      orderBy: { startTime: "asc" },
     });
   }
 
@@ -263,13 +290,13 @@ export class BookingsService {
           include: { service: true },
         },
         history: {
-          orderBy: { timestamp: 'desc' },
+          orderBy: { timestamp: "desc" },
         },
       },
     });
 
     if (!appointment) {
-      throw new NotFoundException('Appointment not found');
+      throw new NotFoundException("Appointment not found");
     }
 
     return appointment;
@@ -284,17 +311,17 @@ export class BookingsService {
   ) {
     const appointment = await this.getAppointmentById(tenantId, id);
 
-    if (
-      appointment.status === AppointmentStatus.COMPLETED ||
-      appointment.status === AppointmentStatus.CANCELLED
-    ) {
-      throw new BadRequestException(`Cannot cancel appointment with status ${appointment.status}`);
-    }
+    if (appointment.status !== "CONFIRMED")
+      throw new BadRequestException(
+        "Only confirmed bookings can be cancelled. Contact the salon for checked-in visits.",
+      );
 
     // Cancellation window check (if customer is cancelling)
-    if (actorRole === 'CUSTOMER') {
-      const profile = await this.prisma.salonProfile.findUnique({ where: { tenantId } });
-      const windowHours = profile?.cancellationWindowHours || 2;
+    if (actorRole === "CUSTOMER") {
+      const profile = await this.prisma.salonProfile.findUnique({
+        where: { tenantId },
+      });
+      const windowHours = profile?.cancellationWindowHours ?? 2;
       const minCancelTime = new Date(Date.now() + windowHours * 60 * 60 * 1000);
       if (appointment.startTime < minCancelTime) {
         throw new ForbiddenException(
@@ -313,7 +340,7 @@ export class BookingsService {
             fromStatus: appointment.status,
             toStatus: AppointmentStatus.CANCELLED,
             actorId,
-            actorRole: actorRole || 'RECEPTIONIST',
+            actorRole: actorRole || "RECEPTIONIST",
             reason,
           },
         },
@@ -325,8 +352,8 @@ export class BookingsService {
       branchId: appointment.branchId,
       actorId,
       actorRole,
-      action: 'BOOKING_CANCELLED',
-      entityType: 'Appointment',
+      action: "BOOKING_CANCELLED",
+      entityType: "Appointment",
       entityId: id,
       before: { status: appointment.status },
       after: { status: AppointmentStatus.CANCELLED, reason },
@@ -334,7 +361,7 @@ export class BookingsService {
     });
 
     this.eventsGateway.broadcastTimelineUpdated(appointment.branchId, {
-      type: 'BOOKING_CANCELLED',
+      type: "BOOKING_CANCELLED",
       appointmentId: id,
     });
 
@@ -350,6 +377,10 @@ export class BookingsService {
     actorRole?: string,
   ) {
     const appointment = await this.getAppointmentById(tenantId, id);
+    if (appointment.status !== "CONFIRMED")
+      throw new BadRequestException(
+        "Only confirmed bookings can be rescheduled",
+      );
     const serviceIds = appointment.services.map((s) => s.serviceId);
 
     // Check availability at new time
@@ -359,50 +390,92 @@ export class BookingsService {
       serviceIds,
       dateStr: newDateStr,
       staffId: appointment.staffId || undefined,
+      excludeAppointmentId: id,
     });
 
     const matchingSlot = availableSlots.find((s) => s.time === newTimeStr);
     if (!matchingSlot) {
-      throw new ConflictException('The requested reschedule slot is not available');
+      throw new ConflictException(
+        "The requested reschedule slot is not available",
+      );
     }
 
     const newDate = new Date(`${newDateStr}T00:00:00.000Z`);
-    const newStart = new Date(`${newDateStr}T${newTimeStr}:00.000Z`);
-    const newEnd = new Date(newStart.getTime() + (appointment.totalDuration + appointment.totalBuffer) * 60 * 1000);
+    const newStart = new Date(matchingSlot.timestamp);
+    const newEnd = new Date(
+      newStart.getTime() +
+        (appointment.totalDuration + appointment.totalBuffer) * 60 * 1000,
+    );
 
-    const updated = await this.prisma.appointment.update({
-      where: { id },
-      data: {
-        date: newDate,
-        startTime: newStart,
-        endTime: newEnd,
-        staffId: matchingSlot.staffId,
-        history: {
-          create: {
-            fromStatus: appointment.status,
-            toStatus: appointment.status,
-            actorId,
-            actorRole,
-            reason: `Rescheduled from ${appointment.startTime.toISOString()} to ${newStart.toISOString()}`,
-          },
+    const updated = await this.prisma
+      .$transaction(
+        async (tx) => {
+          const current = await tx.appointment.findFirst({
+            where: { id, tenantId, status: "CONFIRMED" },
+          });
+          if (!current)
+            throw new ConflictException(
+              "This booking changed while rescheduling",
+            );
+          const overlap = await tx.appointment.findFirst({
+            where: {
+              tenantId,
+              staffId: matchingSlot.staffId,
+              id: { not: id },
+              status: {
+                in: ["CONFIRMED", "CHECKED_IN", "IN_SERVICE", "WAITING"],
+              },
+              startTime: { lt: newEnd },
+              endTime: { gt: newStart },
+            },
+          });
+          if (overlap)
+            throw new ConflictException(
+              "The requested reschedule slot was just booked",
+            );
+          return tx.appointment.update({
+            where: { id },
+            data: {
+              date: newDate,
+              startTime: newStart,
+              endTime: newEnd,
+              staffId: matchingSlot.staffId,
+              history: {
+                create: {
+                  fromStatus: appointment.status,
+                  toStatus: appointment.status,
+                  actorId,
+                  actorRole,
+                  reason: `Rescheduled from ${appointment.startTime.toISOString()} to ${newStart.toISOString()}`,
+                },
+              },
+            },
+          });
         },
-      },
-    });
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      )
+      .catch((error) => {
+        if (error.code === "P2034")
+          throw new ConflictException(
+            "That time changed while rescheduling. Please try another slot.",
+          );
+        throw error;
+      });
 
     await this.auditService.log({
       tenantId,
       branchId: appointment.branchId,
       actorId,
       actorRole,
-      action: 'BOOKING_RESCHEDULED',
-      entityType: 'Appointment',
+      action: "BOOKING_RESCHEDULED",
+      entityType: "Appointment",
       entityId: id,
       before: { startTime: appointment.startTime },
       after: { startTime: newStart },
     });
 
     this.eventsGateway.broadcastTimelineUpdated(appointment.branchId, {
-      type: 'BOOKING_RESCHEDULED',
+      type: "BOOKING_RESCHEDULED",
       appointmentId: id,
     });
 

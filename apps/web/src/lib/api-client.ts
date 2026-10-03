@@ -1,196 +1,194 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
-
-export class VeloraApiClient {
-  private tenantId = 'velora-signature';
-  private token: string | null = null;
-
-  setTenantId(id: string) {
-    this.tenantId = id;
-  }
-
-  setToken(token: string | null) {
-    this.token = token;
-    if (typeof window !== 'undefined') {
-      if (token) localStorage.setItem('velora_token', token);
-      else localStorage.removeItem('velora_token');
-    }
-  }
-
-  getToken(): string | null {
-    if (this.token) return this.token;
-    if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem('velora_token');
-    }
-    return this.token;
-  }
-
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-Tenant-Id': this.tenantId,
-      ...(options.headers as Record<string, string>),
-    };
-
-    const token = this.getToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const res = await fetch(`${BASE_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
-
-    const json = await res.json();
-    if (!res.ok) {
-      throw new Error(json.message || json.error || 'API Request failed');
-    }
-
-    return json.data !== undefined ? json.data : json;
-  }
-
-  // Public Salon Microsite
-  async getPublicSalon(slug = 'velora-signature') {
-    return this.request<any>(`/tenants/public/${slug}`);
-  }
-
-  // Services
-  async getServices(categoryId?: string) {
-    const q = categoryId ? `?categoryId=${categoryId}` : '';
-    return this.request<any[]>(`/services${q}`);
-  }
-
-  async getCategories() {
-    return this.request<any[]>('/services/categories');
-  }
-
-  // Stylists
-  async getStaff(serviceId?: string) {
-    const q = serviceId ? `?serviceId=${serviceId}` : '';
-    return this.request<any[]>(`/staff${q}`);
-  }
-
-  // Booking & Dynamic Slots
-  async getAvailability(branchId: string, serviceIds: string[], date: string, staffId?: string) {
-    const params = new URLSearchParams({
-      branchId,
-      serviceIds: serviceIds.join(','),
-      date,
-    });
-    if (staffId && staffId !== 'any') params.append('staffId', staffId);
-    return this.request<any[]>(`/bookings/availability?${params.toString()}`);
-  }
-
-  async createBooking(data: {
-    branchId: string;
-    customerName: string;
-    customerPhone: string;
-    customerEmail?: string;
-    serviceIds: string[];
-    dateStr: string;
-    timeStr: string;
-    staffId?: string;
-    notes?: string;
-  }) {
-    return this.request<any>('/bookings', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  // Live Queue & Walk-ins
-  async joinQueue(data: {
-    branchId: string;
-    customerName: string;
-    customerPhone: string;
-    customerEmail?: string;
-    serviceIds: string[];
-    preferredStaffId?: string;
-    notes?: string;
-  }) {
-    return this.request<any>('/queue/join', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async getPublicQueueStatus(tokenNumber: string) {
-    return this.request<any>(`/queue/status/${tokenNumber}`);
-  }
-
-  // Auth
-  async login(email: string, password: string) {
-    const result = await this.request<{ accessToken: string; user: any }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    this.setToken(result.accessToken);
-    return result;
-  }
-
-  async requestOtp(phone: string) {
-    return this.request<{ success: boolean; cooldownSeconds: number }>('/auth/customer/otp/request', {
-      method: 'POST',
-      body: JSON.stringify({ phone }),
-    });
-  }
-
-  async verifyOtp(phone: string, otp: string, name?: string) {
-    const result = await this.request<{ accessToken: string; customer: any }>('/auth/customer/otp/verify', {
-      method: 'POST',
-      body: JSON.stringify({ phone, otp, name }),
-    });
-    this.setToken(result.accessToken);
-    return result;
-  }
-
-  // Desk Operations
-  async getDeskOverview(branchId: string) {
-    return this.request<any>(`/desk/overview?branchId=${branchId}`);
-  }
-
-  async searchDesk(branchId: string, q: string) {
-    return this.request<any>(`/desk/search?branchId=${branchId}&q=${encodeURIComponent(q)}`);
-  }
-
-  async startService(queueEntryId: string, staffId: string) {
-    return this.request<any>(`/desk/start-service/${queueEntryId}`, {
-      method: 'POST',
-      body: JSON.stringify({ staffId }),
-    });
-  }
-
-  async completeService(queueEntryId: string) {
-    return this.request<any>(`/desk/complete-service/${queueEntryId}`, {
-      method: 'POST',
-    });
-  }
-
-  async markNoShow(appointmentId: string) {
-    return this.request<any>(`/desk/no-show/${appointmentId}`, {
-      method: 'POST',
-    });
-  }
-
-  // Unified Flow
-  async getUnifiedTimeline(branchId: string, date?: string) {
-    const q = date ? `&date=${date}` : '';
-    return this.request<any>(`/flow/timeline?branchId=${branchId}${q}`);
-  }
-
-  async checkInAppointment(appointmentId: string) {
-    return this.request<any>(`/flow/check-in/${appointmentId}`, {
-      method: 'POST',
-    });
-  }
-
-  // Insights / Analytics
-  async getDashboardAnalytics(branchId?: string, date?: string) {
-    const params = new URLSearchParams();
-    if (branchId) params.append('branchId', branchId);
-    if (date) params.append('date', date);
-    return this.request<any>(`/analytics/dashboard?${params.toString()}`);
+export type Service = {
+  id: string;
+  name: string;
+  description?: string;
+  price: number;
+  duration: number;
+  buffer: number;
+  imageUrl?: string;
+  categoryId: string;
+};
+export type Staff = {
+  schedules?: { branchId: string; isWorkingDay: boolean }[];
+  id: string;
+  name: string;
+  title: string;
+  photoUrl?: string;
+  rating: number;
+  reviewCount: number;
+  operationalStatus: string;
+  services: { serviceId: string }[];
+};
+export type Branch = {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  phone: string;
+  email?: string;
+  currency: string;
+  timezone: string;
+  openingTime: string;
+  closingTime: string;
+  weeklyHolidays: string[];
+};
+export type Salon = {
+  id: string;
+  name: string;
+  salonProfile: {
+    currency: string;
+    timezone: string;
+    email?: string;
+    cancellationWindowHours: number;
+  };
+  branches: Branch[];
+  serviceCategories: { id: string; name: string; services: Service[] }[];
+  staffProfiles: Staff[];
+};
+export type StaffUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  tenantId: string;
+  branchId?: string;
+  salon?: { slug: string };
+  branch?: { id: string };
+};
+export type Slot = {
+  time: string;
+  timestamp: string;
+  staffId: string;
+  staffName: string;
+};
+export type Appointment = {
+  id: string;
+  customerId: string;
+  customer: { name: string; phone: string };
+  staff?: Staff;
+  staffId?: string;
+  branchId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+  totalPrice: number;
+  totalDuration: number;
+  services: { serviceId: string; service: Service }[];
+};
+export type Entry = {
+  id: string;
+  tokenNumber: string;
+  status: string;
+  position: number;
+  estimatedWaitMinutes: number;
+  serviceIds: string[];
+  services?: Service[];
+  customer: { name: string; phone: string };
+  staff?: Staff;
+  staffId?: string;
+  totalDuration: number;
+  serviceStartAt?: string;
+};
+export type QueueReceipt = { id: string; tokenNumber: string };
+export type QueueStatus = {
+  id: string;
+  tokenNumber: string;
+  status: string;
+  position: number;
+  guestsAhead: number;
+  estimatedWaitMinutes: number;
+  services: string[];
+  staffName: string;
+  branchName: string;
+  joinedAt: string;
+};
+export type Desk = {
+  waiting: Entry[];
+  inService: Entry[];
+  upcoming: Appointment[];
+};
+export type SearchResults = {
+  customers: { id: string; name: string; phone: string }[];
+  appointments: Appointment[];
+  queueEntries: Entry[];
+};
+export type Analytics = {
+  date: string;
+  customersToday: number;
+  appointmentsToday: number;
+  walkinsToday: number;
+  completedServices: number;
+  avgWaitMinutes: number;
+  avgServiceMinutes: number;
+  noShowRate: string;
+  cancellationRate: string;
+  appointmentRatio: { appointments: number; walkins: number };
+  mostBookedService: string;
+  serviceDemand: { id: string; name: string; count: number }[];
+  staffUtilization: {
+    staffId: string;
+    name: string;
+    utilizationPct: number;
+    serviceMinutes: number;
+    availableMinutes: number;
+  }[];
+};
+export type VisitInput = {
+  branchId: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  serviceIds: string[];
+  notes?: string;
+};
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public requestId?: string,
+  ) {
+    super(message);
   }
 }
-
-export const apiClient = new VeloraApiClient();
+export async function request<T>(
+  path: string,
+  tenantId?: string,
+  options: {
+    method?: string;
+    body?: unknown;
+    staff?: boolean;
+    idempotencyKey?: string;
+  } = {},
+): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (tenantId) headers["X-Tenant-Id"] = tenantId;
+  if (options.staff) headers["X-Staff-Session"] = "1";
+  if (options.idempotencyKey)
+    headers["X-Idempotency-Key"] = options.idempotencyKey;
+  const response = await fetch(`/api/v1/${path}`, {
+    method: options.method || "GET",
+    credentials: "same-origin",
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    cache: "no-store",
+  });
+  const json = await response.json();
+  if (!response.ok || json.success === false) {
+    const message = json.error?.message || json.message || "Request failed";
+    throw new ApiError(
+      Array.isArray(message) ? message.join(". ") : message,
+      response.status,
+      json.requestId,
+    );
+  }
+  return json.data as T;
+}
+export const qs = (values: Record<string, string | undefined>) =>
+  new URLSearchParams(
+    Object.entries(values).filter(
+      (v): v is [string, string] => v[1] !== undefined,
+    ),
+  ).toString();

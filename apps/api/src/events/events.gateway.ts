@@ -13,7 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: (process.env.CORS_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000').split(','),
   },
 })
 export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -27,11 +27,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleConnection(client: Socket) {
     try {
       const authHeader = client.handshake.headers.authorization || client.handshake.auth?.token;
+      if (!authHeader) { client.disconnect(true); return; }
       if (authHeader) {
         const token = authHeader.replace(/^Bearer\s+/, '');
         const payload = this.jwtService.verify(token, {
           secret: process.env.JWT_SECRET || 'velora_super_secure_production_ready_jwt_secret_2026_x99',
         });
+        if (!['SALON_OWNER', 'BRANCH_MANAGER', 'RECEPTIONIST', 'PROFESSIONAL'].includes(payload.role) || !payload.tenantId) {
+          client.disconnect(true); return;
+        }
         (client as any).user = payload;
         if (payload.tenantId) {
           client.join(`tenant:${payload.tenantId}`);
@@ -42,7 +46,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       }
     } catch {
-      // Allow unauthenticated connection for public customer queue tracking by token room
+      client.disconnect(true);
     }
   }
 
@@ -55,7 +59,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { branchId: string; tenantId: string },
   ) {
-    if (data?.branchId) {
+    const user = (client as any).user;
+    if (data?.branchId && user?.tenantId === data.tenantId && user.branchId === data.branchId) {
       client.join(`queue:${data.branchId}`);
       return { status: 'subscribed', room: `queue:${data.branchId}` };
     }
@@ -66,10 +71,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { tokenNumber: string },
   ) {
-    if (data?.tokenNumber) {
-      client.join(`token:${data.tokenNumber}`);
-      return { status: 'subscribed', room: `token:${data.tokenNumber}` };
-    }
+    return { status: 'denied', message: 'Use the private receipt HTTP endpoint for customer tracking' };
   }
 
   // Domain event broadcasters

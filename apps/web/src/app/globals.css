@@ -3542,3 +3542,453 @@ select {
     margin-bottom: 14px;
   }
 }
+/* Connected application: server data, customer receipts and staff sessions. */
+.live-content {
+  padding: 36px 4%;
+  max-width: 1560px;
+  margin: auto;
+}
+.live-content > h1,
+.live-login h1 {
+  font-size: 46px;
+  margin: 14px 0;
+}
+.live-section {
+  padding: 20px;
+  margin: 16px 0;
+}
+.live-section h2 {
+  margin-bottom: 12px;
+}
+.live-section label,
+.live-login label,
+.live-ops-header label {
+  display: grid;
+  gap: 7px;
+  margin: 15px 0;
+}
+.live-section input,
+.live-section select,
+.live-content > label select,
+.live-ops-header select,
+.live-login input,
+.live-row input,
+.live-queue-receipt select {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fdfbf7;
+}
+.live-error {
+  color: #a22f31;
+  background: #fff1ef;
+  border: 1px solid #ebc6c1;
+  padding: 12px;
+  border-radius: 6px;
+  margin: 12px 0;
+}
+.live-error small {
+  color: inherit;
+  display: block;
+}
+.live-team-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.live-professional {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  align-items: center;
+  min-width: 0;
+}
+.live-professional img {
+  width: 80px;
+  height: 130px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.live-professional h3 {
+  font-size: 17px;
+}
+.live-professional p {
+  font-size: 11px;
+}
+.live-queue-card {
+  padding: 18px;
+}
+.live-queue-card p {
+  margin: 12px 0;
+}
+.live-booking .live-section {
+  margin-top: 0;
+}
+.live-booking .service-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.live-check {
+  display: block;
+  font-size: 11px;
+  color: #986b35;
+  padding: 9px;
+}
+.live-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 20px;
+}
+.live-slots {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+.live-slots button {
+  border: 1px solid var(--border);
+  padding: 10px;
+  border-radius: 5px;
+}
+.live-slots button.selected {
+  background: var(--velora-gold);
+  color: #fff;
+}
+.live-policy {
+  font-size: 12px;
+  margin-top: 20px;
+}
+.live-queue-layout {
+  background:
+    linear-gradient(90deg, #fcfaf6 18%, #fcfaf640 60%),
+    url("/photos/salon.webp") center/cover;
+  display: grid;
+  grid-template-columns: 1.1fr 0.85fr 0.9fr;
+  gap: 30px;
+  padding: 50px 4%;
+  align-items: start;
+}
+.live-queue-intro h1 {
+  font-size: 76px;
+  margin: 24px 0;
+}
+.live-queue-intro .button {
+  margin-top: 24px;
+}
+.live-queue-receipt {
+  padding: 30px;
+  text-align: center;
+  border: 8px solid #241e18;
+  border-radius: 38px;
+}
+.live-queue-receipt .logo {
+  width: 190px;
+  margin: 15px auto 30px;
+}
+.live-queue-receipt h1 {
+  font-size: 62px;
+  margin: 15px 0;
+}
+.live-queue-receipt h3 {
+  margin: 22px 0 10px;
+}
+.live-queue-receipt p {
+  margin: 12px 0;
+}
+.live-queue-receipt small {
+  display: block;
+}
+.live-status {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 20px;
+  background: #ece8df;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+.live-salon-photo {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  margin-bottom: 20px;
+  border-radius: 5px;
+}
+.live-queue-layout aside .button {
+  margin-top: 14px;
+}
+.live-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+.live-receipt-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.live-login {
+  max-width: 480px;
+  margin: 70px auto;
+  padding: 35px;
+}
+.live-login form {
+  margin: 24px 0;
+}
+.live-login .logo {
+  width: 220px;
+}
+.live-ops-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: #fcfaf6;
+  gap: 20px;
+}
+.live-ops-header label {
+  margin: 5px 0;
+  font-size: 11px;
+}
+.live-ops-header small,
+.live-operational-row small {
+  display: block;
+}
+.live-desk-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 18px;
+}
+.live-operational-row {
+  border: 1px solid var(--border);
+  padding: 12px;
+  margin-top: 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.live-operational-row h3 {
+  font-size: 16px;
+}
+.live-operational-row p {
+  font-size: 11px;
+}
+.live-operational-row section {
+  flex: 1;
+  min-width: 0;
+}
+.live-row-actions {
+  display: grid;
+  gap: 6px;
+}
+.live-row-actions .button {
+  padding: 7px 10px;
+  font-size: 11px;
+  min-height: 32px;
+}
+.live-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+.live-kpis .live-section {
+  padding: 16px;
+}
+.live-kpis h3 {
+  font-size: 16px;
+  margin: 12px 0;
+}
+.live-kpis h2 {
+  font-size: 36px;
+}
+.live-insights-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 18px;
+}
+.live-chart {
+  height: 260px;
+  margin-top: 20px;
+}
+.live-demand {
+  display: grid;
+  grid-template-columns: 1fr 45px;
+  gap: 8px;
+  margin-top: 16px;
+}
+.live-demand progress {
+  width: 100%;
+  grid-column: 1 / -1;
+  accent-color: var(--velora-gold);
+}
+.live-branch-select {
+  padding: 12px 4%;
+}
+.modal:has(.live-booking),
+.modal:has(.service-grid) {
+  max-width: 1100px;
+}
+.modal .booking-layout {
+  margin: 0;
+  padding: 10px;
+}
+.modal .booking-hero {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .live-team-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .live-queue-layout {
+    grid-template-columns: 1fr 1fr;
+  }
+  .live-queue-layout aside {
+    grid-column: 1/-1;
+  }
+  .live-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .live-desk-grid {
+    grid-template-columns: 1fr;
+  }
+  .live-booking .service-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .live-content {
+    padding: 24px 16px;
+  }
+  .live-content > h1,
+  .live-login h1 {
+    font-size: 36px;
+  }
+  .live-team-grid,
+  .live-queue-layout,
+  .live-fields,
+  .live-insights-grid {
+    grid-template-columns: 1fr;
+  }
+  .live-booking .service-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .live-section {
+    padding: 14px;
+  }
+  .live-slots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .live-queue-layout {
+    padding: 24px 16px;
+  }
+  .live-queue-intro h1 {
+    font-size: 52px;
+  }
+  .live-queue-layout aside {
+    grid-column: auto;
+  }
+  .live-row,
+  .live-receipt-actions,
+  .live-ops-header,
+  .live-operational-row {
+    flex-wrap: wrap;
+  }
+  .live-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .live-login {
+    margin: 30px 16px;
+    padding: 24px;
+  }
+  .live-ops-header {
+    padding: 14px;
+  }
+  .live-ops-header > div {
+    width: 100%;
+  }
+  .live-operational-row > section {
+    flex-basis: 60%;
+  }
+  .live-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+.operations {
+  display: flex;
+  min-height: 100vh;
+}
+.operations-main {
+  flex: 1;
+  min-width: 0;
+}
+.operations .sidebar > img {
+  width: 145px;
+  margin: auto auto 30px;
+}
+@media (max-width: 768px) {
+  .operations {
+    flex-direction: column;
+  }
+  .operations .sidebar {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    position: static;
+    padding: 12px;
+  }
+  .operations .sidebar .logo {
+    margin: 0 0 10px;
+    width: 130px;
+  }
+  .operations .sidebar nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .operations .sidebar nav a {
+    padding: 8px;
+  }
+  .operations .sidebar > img {
+    display: none;
+  }
+}
+
+.live-date-filter {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0;
+}
+.live-date-filter input {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.modal:has(.live-booking),
+.modal:has(.service-grid) {
+  width: min(1100px, calc(100vw - 32px));
+}
+.modal .live-booking .booking-summary {
+  margin-top: 0;
+}
+.modal .live-booking .live-slots {
+  grid-template-columns: repeat(auto-fit, minmax(65px, 1fr));
+}
+@media (max-width: 1100px) {
+  .modal .live-booking {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 768px) {
+  .operations .sidebar nav a {
+    font-size: 12px;
+    gap: 8px;
+  }
+  .operations .desk-hero p {
+    max-width: 280px;
+    font-size: 14px;
+  }
+}

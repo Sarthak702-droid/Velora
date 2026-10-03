@@ -45,11 +45,7 @@ export class FlowService {
       throw new NotFoundException('Appointment not found');
     }
 
-    if (
-      appointment.status === AppointmentStatus.CHECKED_IN ||
-      appointment.status === AppointmentStatus.IN_SERVICE ||
-      appointment.status === AppointmentStatus.COMPLETED
-    ) {
+    if (appointment.status !== AppointmentStatus.CONFIRMED) {
       throw new BadRequestException(`Appointment is already in state ${appointment.status}`);
     }
 

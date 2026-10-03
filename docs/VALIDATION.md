@@ -1,3 +1,5 @@
+For the subsequent real backend integration and current test results, see [Frontend integration](FRONTEND_INTEGRATION.md). The original visual/demo validation follows.
+
 # Validation and known differences
 
 ## Executed checks

@@ -2,6 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsArray,
+  ArrayNotEmpty,
   IsOptional,
   Matches,
   IsInt,
@@ -28,7 +29,8 @@ export class JoinQueueRequestDto {
   customerEmail?: string;
 
   @IsArray()
-  @IsNotEmpty()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
   serviceIds: string[];
 
   @IsOptional()

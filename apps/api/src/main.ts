@@ -34,10 +34,10 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.velora.com')) {
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(null, true); // Allow dev origins
+        callback(new Error('Origin is not allowed'), false);
       }
     },
     credentials: true,

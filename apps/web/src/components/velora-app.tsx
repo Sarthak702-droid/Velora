@@ -84,7 +84,7 @@ function Photo({
 }) {
   return <img src={pic(name)} alt={alt} className={className} />;
 }
-function Logo({ light = false }: { light?: boolean }) {
+export function Logo({ light = false }: { light?: boolean }) {
   return (
     <img
       className="logo"
@@ -96,7 +96,7 @@ function Logo({ light = false }: { light?: boolean }) {
 function Label({ children }: { children: ReactNode }) {
   return <div className="eyebrow">{children}</div>;
 }
-function Header() {
+export function Header() {
   const path = usePathname();
   const [expanded, setExpanded] = useState(false);
   return (
@@ -458,7 +458,7 @@ function CustomerFields({
     handleSubmit,
     formState: { errors },
   } = useForm<{ name: string; phone: string }>({
-    resolver: zodResolver(customerSchema as any),
+    resolver: zodResolver(customerSchema),
     defaultValues: defaults,
   });
   return (

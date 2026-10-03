@@ -12,13 +12,23 @@
     "test": "turbo test",
     "test:api": "pnpm --filter @velora/api test",
     "test:web": "pnpm --filter @velora/web test",
-    "test:e2e": "pnpm --filter @velora/web test:e2e",
+    "test:e2e": "node scripts/test-live.mjs",
     "prisma:generate": "pnpm --filter @velora/api exec prisma generate",
     "prisma:push": "pnpm --filter @velora/api exec prisma db push",
-    "prisma:seed": "pnpm --filter @velora/api exec ts-node prisma/seed.ts"
+    "prisma:seed": "pnpm --filter @velora/api exec ts-node prisma/seed.ts",
+    "test:e2e:demo": "pnpm --filter @velora/web exec playwright test"
   },
   "devDependencies": {
     "prettier": "3.8.1",
     "turbo": "2.8.17"
+  },
+  "pnpm": {
+    "packageExtensions": {
+      "@hookform/resolvers@5.2.2": {
+        "peerDependencies": {
+          "zod": "^4.3.6"
+        }
+      }
+    }
   }
 }

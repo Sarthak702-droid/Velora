@@ -1,44 +1,46 @@
+import { Controller, Get, Post, Param, Query, Body } from "@nestjs/common";
+import { DeskService } from "./desk.service";
+import { Roles, RequireFeature } from "../common/decorators/metadata.decorator";
 import {
-  Controller,
-  Get,
-  Post,
-  Param,
-  Query,
-  Body,
-} from '@nestjs/common';
-import { DeskService } from './desk.service';
-import { Roles, RequireFeature } from '../common/decorators/metadata.decorator';
-import { CurrentTenant, CurrentUser } from '../common/decorators/current.decorator';
-import { UserRole } from '@prisma/client';
+  CurrentTenant,
+  CurrentUser,
+} from "../common/decorators/current.decorator";
+import { UserRole } from "@prisma/client";
 
-@Controller('desk')
-@Roles(UserRole.SALON_OWNER, UserRole.BRANCH_MANAGER, UserRole.RECEPTIONIST, UserRole.PROFESSIONAL)
+@Controller("desk")
+@Roles(
+  UserRole.SALON_OWNER,
+  UserRole.BRANCH_MANAGER,
+  UserRole.RECEPTIONIST,
+  UserRole.PROFESSIONAL,
+)
 export class DeskController {
   constructor(private readonly deskService: DeskService) {}
 
-  @Get('overview')
-  @RequireFeature('desk.reception')
+  @Get("overview")
+  @RequireFeature("desk.reception")
   async getDeskOverview(
     @CurrentTenant() tenantId: string,
-    @Query('branchId') branchId: string,
+    @Query("branchId") branchId: string,
+    @Query("date") date?: string,
   ) {
-    return this.deskService.getDeskOverview(tenantId, branchId);
+    return this.deskService.getDeskOverview(tenantId, branchId, date);
   }
 
-  @Get('search')
+  @Get("search")
   async globalSearch(
     @CurrentTenant() tenantId: string,
-    @Query('branchId') branchId: string,
-    @Query('q') query: string,
+    @Query("branchId") branchId: string,
+    @Query("q") query: string,
   ) {
     return this.deskService.globalSearch(tenantId, branchId, query);
   }
 
-  @Post('start-service/:id')
+  @Post("start-service/:id")
   async startService(
     @CurrentTenant() tenantId: string,
-    @Param('id') queueEntryId: string,
-    @Body('staffId') staffId: string,
+    @Param("id") queueEntryId: string,
+    @Body("staffId") staffId: string,
     @CurrentUser() user: any,
   ) {
     return this.deskService.startService(
@@ -51,10 +53,10 @@ export class DeskController {
     );
   }
 
-  @Post('complete-service/:id')
+  @Post("complete-service/:id")
   async completeService(
     @CurrentTenant() tenantId: string,
-    @Param('id') queueEntryId: string,
+    @Param("id") queueEntryId: string,
     @CurrentUser() user: any,
   ) {
     return this.deskService.completeService(
@@ -66,10 +68,10 @@ export class DeskController {
     );
   }
 
-  @Post('no-show/:id')
+  @Post("no-show/:id")
   async markNoShow(
     @CurrentTenant() tenantId: string,
-    @Param('id') appointmentId: string,
+    @Param("id") appointmentId: string,
     @CurrentUser() user: any,
   ) {
     return this.deskService.markNoShow(

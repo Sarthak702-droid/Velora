@@ -54,15 +54,14 @@ export class NotificationsService {
         recipient,
         templateKey,
         content,
-        status: 'SENT',
-        sentAt: new Date(),
+        status: 'PENDING',
       },
     });
 
     // In production, connects to WhatsApp Cloud API / Resend HTTP clients
     this.logger.log(
       JSON.stringify({
-        event: 'NOTIFICATION_DISPATCHED',
+        event: 'NOTIFICATION_PENDING_PROVIDER',
         notificationId: notification.id,
         channel,
         recipient: recipient.slice(-4),

@@ -63,11 +63,11 @@ export class OtpService {
     });
 
     // In production, send via WhatsApp/SMS provider. In development/testing, log only delivery status (NOT the plain OTP)
-    this.logger.log(`[OTP DISPATCHED] Verification code generated for ${cleanPhone.slice(-4)}`);
+    this.logger.log(`[OTP GENERATED: DELIVERY NOT CONFIGURED] Verification code generated for ${cleanPhone.slice(-4)}`);
 
     return {
-      success: true,
-      message: 'Verification code sent successfully',
+      success: false,
+      message: 'Code generated, but SMS/WhatsApp delivery is not configured. Contact the salon for booking help.',
       cooldownSeconds: this.COOLDOWN_SECONDS,
     };
   }

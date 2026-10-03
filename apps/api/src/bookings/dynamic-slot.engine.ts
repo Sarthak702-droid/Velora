@@ -1,11 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { zonedTime, localMinutes } from "./zoned-time";
+import { BadRequestException } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
 
 export interface SlotCalculationInput {
   tenantId: string;
   branchId: string;
   serviceIds: string[];
   dateStr: string; // YYYY-MM-DD
+  excludeAppointmentId?: string;
   staffId?: string; // Optional: specific stylist or 'any'
 }
 
@@ -20,12 +23,25 @@ export interface AvailableSlot {
 export class DynamicSlotEngine {
   constructor(private readonly prisma: PrismaService) {}
 
-  async calculateAvailableSlots(input: SlotCalculationInput): Promise<AvailableSlot[]> {
+  async calculateAvailableSlots(
+    input: SlotCalculationInput,
+  ): Promise<AvailableSlot[]> {
     const { tenantId, branchId, serviceIds, dateStr, staffId } = input;
 
+    if (
+      !tenantId ||
+      !branchId ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(dateStr || "") ||
+      !serviceIds.length
+    )
+      throw new BadRequestException(
+        "Tenant, branch, services and a valid date are required",
+      );
+    if (!Number.isFinite(Date.parse(`${dateStr}T00:00:00Z`)))
+      throw new BadRequestException("Invalid date");
     // 1. Fetch branch operating hours
-    const branch = await this.prisma.branch.findUnique({
-      where: { id: branchId },
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, tenantId },
     });
     if (!branch || !branch.active) {
       return [];
@@ -34,7 +50,15 @@ export class DynamicSlotEngine {
     const targetDate = new Date(`${dateStr}T00:00:00.000Z`);
     const dayOfWeek = targetDate.getUTCDay(); // 0 = Sunday, 1 = Monday ... 6 = Saturday
 
-    const dayNameMap = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    const dayNameMap = [
+      "SUNDAY",
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY",
+    ];
     if (branch.weeklyHolidays.includes(dayNameMap[dayOfWeek])) {
       return []; // Salon is closed on this holiday
     }
@@ -48,7 +72,7 @@ export class DynamicSlotEngine {
       },
     });
 
-    if (services.length === 0) {
+    if (services.length !== serviceIds.length) {
       return [];
     }
 
@@ -60,12 +84,13 @@ export class DynamicSlotEngine {
     let candidateStaffQuery: any = {
       tenantId,
       active: true,
+      schedules: { some: { branchId, dayOfWeek, isWorkingDay: true } },
       services: {
         some: { serviceId: { in: serviceIds } },
       },
     };
 
-    if (staffId && staffId !== 'any') {
+    if (staffId && staffId !== "any") {
       candidateStaffQuery.id = staffId;
     }
 
@@ -99,8 +124,11 @@ export class DynamicSlotEngine {
         tenantId,
         branchId,
         date: startOfDay,
-        status: { in: ['CONFIRMED', 'CHECKED_IN', 'IN_SERVICE', 'WAITING'] },
+        status: { in: ["CONFIRMED", "CHECKED_IN", "IN_SERVICE", "WAITING"] },
         staffId: { in: qualifiedStaff.map((s) => s.id) },
+        ...(input.excludeAppointmentId
+          ? { id: { not: input.excludeAppointmentId } }
+          : {}),
       },
       select: {
         id: true,
@@ -113,8 +141,8 @@ export class DynamicSlotEngine {
     const slots: AvailableSlot[] = [];
     const slotStepMinutes = 15; // 15-minute grid evaluation for dynamic slot engine
 
-    const [openH, openM] = branch.openingTime.split(':').map(Number);
-    const [closeH, closeM] = branch.closingTime.split(':').map(Number);
+    const [openH, openM] = branch.openingTime.split(":").map(Number);
+    const [closeH, closeM] = branch.closingTime.split(":").map(Number);
     const openTotalMinutes = openH * 60 + openM;
     const closeTotalMinutes = closeH * 60 + closeM;
 
@@ -124,20 +152,23 @@ export class DynamicSlotEngine {
       let staffStartMinutes = openTotalMinutes;
       let staffEndMinutes = closeTotalMinutes;
 
+      if (!schedule) continue;
       if (schedule) {
         if (!schedule.isWorkingDay) continue; // Not working today
-        const [shH, shM] = schedule.startTime.split(':').map(Number);
-        const [ehH, ehM] = schedule.endTime.split(':').map(Number);
+        const [shH, shM] = schedule.startTime.split(":").map(Number);
+        const [ehH, ehM] = schedule.endTime.split(":").map(Number);
         staffStartMinutes = Math.max(openTotalMinutes, shH * 60 + shM);
         staffEndMinutes = Math.min(closeTotalMinutes, ehH * 60 + ehM);
       }
 
       // Check breaks
-      const staffBreaks = staff.breaks.map((b) => {
-        const [bsH, bsM] = b.startTime.split(':').map(Number);
-        const [beH, beM] = b.endTime.split(':').map(Number);
-        return { start: bsH * 60 + bsM, end: beH * 60 + beM };
-      });
+      const staffBreaks = staff.breaks
+        .filter((b) => b.dayOfWeek === null || b.dayOfWeek === dayOfWeek)
+        .map((b) => {
+          const [bsH, bsM] = b.startTime.split(":").map(Number);
+          const [beH, beM] = b.endTime.split(":").map(Number);
+          return { start: bsH * 60 + bsM, end: beH * 60 + beM };
+        });
 
       // Existing appointments for this staff converted to minutes of the day
       const staffAppointments = existingAppointments
@@ -146,8 +177,8 @@ export class DynamicSlotEngine {
           const s = new Date(a.startTime);
           const e = new Date(a.endTime);
           return {
-            start: s.getUTCHours() * 60 + s.getUTCMinutes(),
-            end: e.getUTCHours() * 60 + e.getUTCMinutes(),
+            start: localMinutes(s, branch.timezone),
+            end: localMinutes(e, branch.timezone),
           };
         });
 
@@ -161,20 +192,25 @@ export class DynamicSlotEngine {
 
         // Check break collisions
         const collidesWithBreak = staffBreaks.some(
-          (b) => Math.max(timeMinutes, b.start) < Math.min(slotEndMinutes, b.end),
+          (b) =>
+            Math.max(timeMinutes, b.start) < Math.min(slotEndMinutes, b.end),
         );
         if (collidesWithBreak) continue;
 
         // Check appointment collisions
         const collidesWithAppointment = staffAppointments.some(
-          (app) => Math.max(timeMinutes, app.start) < Math.min(slotEndMinutes, app.end),
+          (app) =>
+            Math.max(timeMinutes, app.start) <
+            Math.min(slotEndMinutes, app.end),
         );
         if (collidesWithAppointment) continue;
 
         const hours = Math.floor(timeMinutes / 60);
         const mins = timeMinutes % 60;
-        const timeStr = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-        const slotTimestamp = new Date(`${dateStr}T${timeStr}:00.000Z`).toISOString();
+        const timeStr = `${hours.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}`;
+        const instant = zonedTime(dateStr, timeStr, branch.timezone);
+        if (instant.getTime() <= Date.now()) continue;
+        const slotTimestamp = instant.toISOString();
 
         slots.push({
           time: timeStr,
@@ -188,7 +224,7 @@ export class DynamicSlotEngine {
     // Sort slots chronologically and deduplicate times if customer selected 'any'
     slots.sort((a, b) => a.time.localeCompare(b.time));
 
-    if (!staffId || staffId === 'any') {
+    if (!staffId || staffId === "any") {
       const seenTimes = new Set<string>();
       const dedupedSlots: AvailableSlot[] = [];
       for (const s of slots) {

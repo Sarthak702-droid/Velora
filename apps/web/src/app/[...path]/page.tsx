@@ -1,4 +1,4 @@
-import { VeloraApp } from "@/components/velora-app";
+import { AppEntry } from "@/components/app-entry";
 export const dynamicParams = false;
 export function generateStaticParams() {
   return [
@@ -14,5 +14,5 @@ export function generateStaticParams() {
   ].map((p) => ({ path: p.split("/") }));
 }
 export default function Page() {
-  return <VeloraApp />;
+  return <AppEntry />;
 }

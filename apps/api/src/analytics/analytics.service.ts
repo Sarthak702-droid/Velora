@@ -1,17 +1,37 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { AppointmentStatus, QueueStatus } from '@prisma/client';
+import { zonedTime } from "../bookings/zoned-time";
+import { Injectable } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { AppointmentStatus, QueueStatus } from "@prisma/client";
 
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getDashboardKpis(tenantId: string, branchId?: string, dateStr?: string) {
+  async getDashboardKpis(
+    tenantId: string,
+    branchId?: string,
+    dateStr?: string,
+  ) {
     const targetDate = dateStr
       ? new Date(`${dateStr}T00:00:00.000Z`)
-      : new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z');
+      : new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z");
 
-    const nextDay = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000);
+    const branch = branchId
+      ? await this.prisma.branch.findFirst({
+          where: { id: branchId, tenantId },
+        })
+      : null;
+    const profile = await this.prisma.salonProfile.findUnique({
+      where: { tenantId },
+    });
+    const zone = branch?.timezone || profile?.timezone || "UTC";
+    const dayKey = targetDate.toISOString().slice(0, 10);
+    const dayStart = zonedTime(dayKey, "00:00", zone);
+    const nextDay = zonedTime(
+      new Date(targetDate.getTime() + 86400000).toISOString().slice(0, 10),
+      "00:00",
+      zone,
+    );
 
     const branchFilter: any = { tenantId };
     if (branchId) {
@@ -34,7 +54,7 @@ export class AnalyticsService {
       where: {
         ...branchFilter,
         joinedAt: {
-          gte: targetDate,
+          gte: dayStart,
           lt: nextDay,
         },
       },
@@ -62,34 +82,46 @@ export class AnalyticsService {
     ).length;
 
     const noShowRate =
-      totalAppointments > 0 ? ((noShowCount / totalAppointments) * 100).toFixed(1) : '0.0';
+      totalAppointments > 0
+        ? ((noShowCount / totalAppointments) * 100).toFixed(1)
+        : "0.0";
     const cancellationRate =
-      totalAppointments > 0 ? ((cancelledCount / totalAppointments) * 100).toFixed(1) : '0.0';
+      totalAppointments > 0
+        ? ((cancelledCount / totalAppointments) * 100).toFixed(1)
+        : "0.0";
 
     // Appointment vs Walk-in ratio (Section 38)
     const appointmentPct =
-      totalVisits > 0 ? Math.round((totalAppointments / totalVisits) * 100) : 50;
+      totalVisits > 0
+        ? Math.round((totalAppointments / totalVisits) * 100)
+        : 50;
     const walkinPct = totalVisits > 0 ? 100 - appointmentPct : 50;
 
     // Average Wait Time calculation from completed queue entries
-    const completedWithWait = walkinsToday.filter((w) => w.checkInAt && w.serviceStartAt);
-    let avgWaitMinutes = 14; // Default fallback
+    const completedWithWait = walkinsToday.filter((w) => w.serviceStartAt);
+    let avgWaitMinutes = 0; // Default fallback
     if (completedWithWait.length > 0) {
       const sumWait = completedWithWait.reduce((sum, w) => {
         const diff =
-          (new Date(w.serviceStartAt!).getTime() - new Date(w.checkInAt!).getTime()) / (1000 * 60);
+          (new Date(w.serviceStartAt!).getTime() -
+            new Date(w.checkInAt || w.joinedAt).getTime()) /
+          (1000 * 60);
         return sum + Math.max(0, diff);
       }, 0);
       avgWaitMinutes = Math.round(sumWait / completedWithWait.length);
     }
 
     // Average Service Duration
-    const completedWithService = walkinsToday.filter((w) => w.serviceStartAt && w.completedAt);
-    let avgServiceMinutes = 32;
+    const completedWithService = walkinsToday.filter(
+      (w) => w.serviceStartAt && w.completedAt,
+    );
+    let avgServiceMinutes = 0;
     if (completedWithService.length > 0) {
       const sumDuration = completedWithService.reduce((sum, w) => {
         const diff =
-          (new Date(w.completedAt!).getTime() - new Date(w.serviceStartAt!).getTime()) / (1000 * 60);
+          (new Date(w.completedAt!).getTime() -
+            new Date(w.serviceStartAt!).getTime()) /
+          (1000 * 60);
         return sum + Math.max(0, diff);
       }, 0);
       avgServiceMinutes = Math.round(sumDuration / completedWithService.length);
@@ -104,6 +136,7 @@ export class AnalyticsService {
     }
     for (const w of walkinsToday) {
       for (const sId of w.serviceIds) {
+        if (w.appointmentId) continue;
         serviceCounts[sId] = (serviceCounts[sId] || 0) + 1;
       }
     }
@@ -121,17 +154,23 @@ export class AnalyticsService {
       }))
       .sort((a, b) => b.count - a.count);
 
-    const mostBookedService = serviceDemand[0]?.name || 'Haircut';
+    const mostBookedService = serviceDemand[0]?.name || "No bookings yet";
 
     // Operational Staff Utilization (Section 42)
     const staffList = await this.prisma.staffProfile.findMany({
-      where: { tenantId, active: true },
+      where: {
+        tenantId,
+        active: true,
+        ...(branchId ? { schedules: { some: { branchId } } } : {}),
+      },
       select: { id: true, name: true, title: true },
     });
 
     const staffUtilization = staffList.map((staff) => {
       const staffApps = appointmentsToday.filter((a) => a.staffId === staff.id);
-      const staffWalkins = walkinsToday.filter((w) => w.staffId === staff.id);
+      const staffWalkins = walkinsToday.filter(
+        (w) => w.staffId === staff.id && !w.appointmentId,
+      );
 
       const serviceMinutes =
         staffApps.reduce((sum, a) => sum + a.totalDuration, 0) +

@@ -11,6 +11,7 @@ export class TenantsService {
       include: {
         salonProfile: true,
         branches: {
+          orderBy: { createdAt: "asc" },
           where: { active: true },
           select: {
             id: true,
@@ -21,6 +22,9 @@ export class TenantsService {
             state: true,
             phone: true,
             whatsapp: true,
+            timezone: true,
+            currency: true,
+            email: true,
             openingTime: true,
             closingTime: true,
             weeklyHolidays: true,
@@ -45,6 +49,7 @@ export class TenantsService {
             rating: true,
             reviewCount: true,
             operationalStatus: true,
+            schedules: { select: { branchId: true, isWorkingDay: true } },
             services: {
               select: { serviceId: true },
             },

@@ -4,11 +4,12 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
-} from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { EventsGateway } from '../events/events.gateway';
-import { AuditService } from '../audit/audit.service';
-import { QueueStatus } from '@prisma/client';
+  ConflictException,
+} from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { EventsGateway } from "../events/events.gateway";
+import { AuditService } from "../audit/audit.service";
+import { QueueStatus, Prisma } from "@prisma/client";
 
 export interface JoinQueueDto {
   branchId: string;
@@ -38,7 +39,7 @@ export class QueueService {
     actorRole?: string,
   ) {
     const { branchId, serviceIds } = dto;
-    const cleanPhone = dto.customerPhone.trim().replace(/\s+/g, '');
+    const cleanPhone = dto.customerPhone.trim().replace(/\s+/g, "");
 
     // 1. Fetch branch and queue configuration
     const branch = await this.prisma.branch.findFirst({
@@ -47,7 +48,7 @@ export class QueueService {
     });
 
     if (!branch) {
-      throw new NotFoundException('Branch not found or inactive');
+      throw new NotFoundException("Branch not found or inactive");
     }
 
     let queue = branch.queue;
@@ -56,7 +57,7 @@ export class QueueService {
         data: {
           tenantId,
           branchId,
-          prefix: 'V',
+          prefix: "V",
           currentSequence: 0,
         },
       });
@@ -67,10 +68,50 @@ export class QueueService {
       where: { id: { in: serviceIds }, tenantId, active: true },
     });
 
-    if (services.length === 0) {
-      throw new BadRequestException('At least one valid service must be selected');
+    if (!serviceIds.length || services.length !== serviceIds.length) {
+      throw new BadRequestException(
+        "At least one valid service must be selected",
+      );
     }
 
+    if (dto.preferredStaffId && dto.preferredStaffId !== "any") {
+      const staff = await this.prisma.staffProfile.findFirst({
+        where: {
+          id: dto.preferredStaffId,
+          tenantId,
+          active: true,
+          schedules: { some: { branchId } },
+        },
+        include: { services: true },
+      });
+      if (
+        !staff ||
+        !serviceIds.every((id) =>
+          staff.services.some((s) => s.serviceId === id),
+        )
+      )
+        throw new BadRequestException(
+          "Selected professional cannot provide all selected services at this branch",
+        );
+    }
+    const professionals = await this.prisma.staffProfile.findMany({
+      where: {
+        tenantId,
+        active: true,
+        schedules: { some: { branchId, isWorkingDay: true } },
+      },
+      include: { services: true },
+    });
+    if (
+      !professionals.some((staff) =>
+        serviceIds.every((id) =>
+          staff.services.some((s) => s.serviceId === id),
+        ),
+      )
+    )
+      throw new BadRequestException(
+        "No professional provides this combination at this branch",
+      );
     const totalDuration = services.reduce((sum, s) => sum + s.duration, 0);
     const totalBuffer = Math.max(...services.map((s) => s.buffer), 5);
 
@@ -83,7 +124,7 @@ export class QueueService {
 
       const sequence = updatedQueue.currentSequence;
       const displayNumber = ((sequence - 1) % 999) + 1;
-      const tokenNumber = `${updatedQueue.prefix}${displayNumber.toString().padStart(3, '0')}`;
+      const tokenNumber = `${updatedQueue.prefix}${displayNumber.toString().padStart(3, "0")}`;
 
       // Upsert customer
       let customer = await tx.customer.findUnique({
@@ -121,9 +162,15 @@ export class QueueService {
       const lastEntry = await tx.queueEntry.findFirst({
         where: {
           branchId,
-          status: { in: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.CHECKED_IN] },
+          status: {
+            in: [
+              QueueStatus.WAITING,
+              QueueStatus.CALLED,
+              QueueStatus.CHECKED_IN,
+            ],
+          },
         },
-        orderBy: { position: 'desc' },
+        orderBy: { position: "desc" },
       });
 
       const position = lastEntry ? lastEntry.position + 1 : 1;
@@ -132,17 +179,27 @@ export class QueueService {
       const activeEntries = await tx.queueEntry.findMany({
         where: {
           branchId,
-          status: { in: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.IN_SERVICE] },
+          status: {
+            in: [
+              QueueStatus.WAITING,
+              QueueStatus.CALLED,
+              QueueStatus.IN_SERVICE,
+            ],
+          },
         },
       });
 
       const estimatedWaitMinutes = activeEntries.reduce(
-        (sum, e) => sum + (e.status === QueueStatus.IN_SERVICE ? Math.ceil(e.totalDuration / 2) : e.totalDuration),
+        (sum, e) =>
+          sum +
+          (e.status === QueueStatus.IN_SERVICE
+            ? Math.ceil(e.totalDuration / 2)
+            : e.totalDuration),
         0,
       );
 
       const staffId =
-        dto.preferredStaffId && dto.preferredStaffId !== 'any'
+        dto.preferredStaffId && dto.preferredStaffId !== "any"
           ? dto.preferredStaffId
           : null;
 
@@ -169,9 +226,9 @@ export class QueueService {
               fromStatus: null,
               toStatus: QueueStatus.WAITING,
               actorId,
-              actorName: actorName || 'Walk-in / QR',
-              actorRole: actorRole || 'CUSTOMER',
-              reason: 'Customer joined queue',
+              actorName: actorName || "Walk-in / QR",
+              actorRole: actorRole || "CUSTOMER",
+              reason: "Customer joined queue",
             },
           },
         },
@@ -186,7 +243,7 @@ export class QueueService {
 
     // Broadcast queue update to real-time clients
     this.eventsGateway.broadcastQueueUpdated(branchId, {
-      type: 'QUEUE_JOINED',
+      type: "QUEUE_JOINED",
       tokenNumber: entry.tokenNumber,
       position: entry.position,
     });
@@ -218,14 +275,18 @@ export class QueueService {
     });
 
     if (!entry) {
-      throw new NotFoundException(`Token '${tokenNumber}' not found in active queue`);
+      throw new NotFoundException(
+        `Token '${tokenNumber}' not found in active queue`,
+      );
     }
 
     // Count how many guests ahead
     const guestsAhead = await this.prisma.queueEntry.count({
       where: {
         branchId: entry.branchId,
-        status: { in: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.CHECKED_IN] },
+        status: {
+          in: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.CHECKED_IN],
+        },
         position: { lt: entry.position },
       },
     });
@@ -240,11 +301,74 @@ export class QueueService {
       tokenNumber: entry.tokenNumber,
       position: entry.position,
       guestsAhead,
-      estimatedWaitMinutes: Math.max(entry.estimatedWaitMinutes, guestsAhead * 15),
+      estimatedWaitMinutes: Math.max(
+        entry.estimatedWaitMinutes,
+        guestsAhead * 15,
+      ),
       status: entry.status,
       services: services.map((s) => s.name),
       joinedAt: entry.joinedAt,
       branchName: entry.branch.name,
+    };
+  }
+
+  async getPrivateQueueStatus(tenantId: string, id: string) {
+    const entry = await this.prisma.queueEntry.findFirst({
+      where: { id, tenantId },
+      include: { branch: true, staff: true },
+    });
+    if (!entry) throw new NotFoundException("Queue visit not found");
+    const ahead = await this.prisma.queueEntry.findMany({
+      where: {
+        tenantId,
+        branchId: entry.branchId,
+        position: { lt: entry.position },
+        status: { in: ["WAITING", "CALLED", "CHECKED_IN"] },
+        ...(entry.staffId
+          ? { OR: [{ staffId: entry.staffId }, { staffId: null }] }
+          : {}),
+      },
+    });
+    const active = await this.prisma.queueEntry.findMany({
+      where: {
+        tenantId,
+        branchId: entry.branchId,
+        status: "IN_SERVICE",
+        ...(entry.staffId ? { staffId: entry.staffId } : {}),
+      },
+    });
+    const pending = ["WAITING", "CALLED", "CHECKED_IN"].includes(entry.status);
+    const minutes = pending
+      ? ahead.reduce((sum, e) => sum + e.totalDuration + e.totalBuffer, 0) +
+        active.reduce(
+          (sum, e) =>
+            sum +
+            Math.max(
+              0,
+              e.totalDuration +
+                e.totalBuffer -
+                (e.serviceStartAt
+                  ? (Date.now() - e.serviceStartAt.getTime()) / 60000
+                  : 0),
+            ),
+          0,
+        )
+      : 0;
+    const services = await this.prisma.service.findMany({
+      where: { tenantId, id: { in: entry.serviceIds } },
+      select: { name: true },
+    });
+    return {
+      id: entry.id,
+      tokenNumber: entry.tokenNumber,
+      status: entry.status,
+      position: pending ? ahead.length + 1 : 0,
+      guestsAhead: pending ? ahead.length : 0,
+      estimatedWaitMinutes: Math.ceil(minutes),
+      services: services.map((s) => s.name),
+      staffName: entry.staff?.name || "Any Available",
+      branchName: entry.branch.name,
+      joinedAt: entry.joinedAt,
     };
   }
 
@@ -270,11 +394,13 @@ export class QueueService {
         staff: true,
         appointment: true,
       },
-      orderBy: { position: 'asc' },
+      orderBy: { position: "asc" },
     });
 
     // Fetch service mappings for all entries
-    const allServiceIds = Array.from(new Set(entries.flatMap((e) => e.serviceIds)));
+    const allServiceIds = Array.from(
+      new Set(entries.flatMap((e) => e.serviceIds)),
+    );
     const services = await this.prisma.service.findMany({
       where: { id: { in: allServiceIds } },
     });
@@ -299,7 +425,9 @@ export class QueueService {
     actorRole?: string,
   ) {
     if (!reason || reason.trim().length < 3) {
-      throw new BadRequestException('A valid reason is required to modify queue priority');
+      throw new BadRequestException(
+        "A valid reason is required to modify queue priority",
+      );
     }
 
     const entry = await this.prisma.queueEntry.findFirst({
@@ -307,9 +435,20 @@ export class QueueService {
     });
 
     if (!entry) {
-      throw new NotFoundException('Queue entry not found');
+      throw new NotFoundException("Queue entry not found");
     }
 
+    if (!["WAITING", "CALLED", "CHECKED_IN"].includes(entry.status))
+      throw new BadRequestException("Only waiting visits can be reordered");
+    const count = await this.prisma.queueEntry.count({
+      where: {
+        tenantId,
+        branchId: entry.branchId,
+        status: { in: ["WAITING", "CALLED", "CHECKED_IN"] },
+      },
+    });
+    if (newPosition < 1 || newPosition > count)
+      throw new BadRequestException("Position is outside the waiting queue");
     const oldPosition = entry.position;
     if (oldPosition === newPosition) {
       return entry;
@@ -322,7 +461,13 @@ export class QueueService {
           where: {
             branchId: entry.branchId,
             position: { gte: newPosition, lt: oldPosition },
-            status: { in: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.CHECKED_IN] },
+            status: {
+              in: [
+                QueueStatus.WAITING,
+                QueueStatus.CALLED,
+                QueueStatus.CHECKED_IN,
+              ],
+            },
           },
           data: { position: { increment: 1 } },
         });
@@ -332,7 +477,13 @@ export class QueueService {
           where: {
             branchId: entry.branchId,
             position: { gt: oldPosition, lte: newPosition },
-            status: { in: [QueueStatus.WAITING, QueueStatus.CALLED, QueueStatus.CHECKED_IN] },
+            status: {
+              in: [
+                QueueStatus.WAITING,
+                QueueStatus.CALLED,
+                QueueStatus.CHECKED_IN,
+              ],
+            },
           },
           data: { position: { decrement: 1 } },
         });
@@ -364,8 +515,8 @@ export class QueueService {
       actorId,
       actorName,
       actorRole,
-      action: 'QUEUE_POSITION_CHANGED',
-      entityType: 'QueueEntry',
+      action: "QUEUE_POSITION_CHANGED",
+      entityType: "QueueEntry",
       entityId: entryId,
       before: { position: oldPosition },
       after: { position: newPosition },
@@ -373,7 +524,7 @@ export class QueueService {
     });
 
     this.eventsGateway.broadcastQueueUpdated(entry.branchId, {
-      type: 'QUEUE_REORDERED',
+      type: "QUEUE_REORDERED",
       entryId,
       fromPosition: oldPosition,
       toPosition: newPosition,
@@ -391,69 +542,167 @@ export class QueueService {
     actorRole?: string,
     staffId?: string,
   ) {
-    const entry = await this.prisma.queueEntry.findFirst({
-      where: { id: entryId, tenantId },
-    });
-
-    if (!entry) {
-      throw new NotFoundException('Queue entry not found');
-    }
-
-    const data: any = {
-      status: newStatus,
-      history: {
-        create: {
-          fromStatus: entry.status,
-          toStatus: newStatus,
-          actorId,
-          actorName,
-          actorRole,
-          reason: `Status changed to ${newStatus}`,
-        },
-      },
+    const allowed: Record<string, string[]> = {
+      WAITING: [
+        "CALLED",
+        "CHECKED_IN",
+        "IN_SERVICE",
+        "CANCELLED",
+        "LEFT",
+        "SKIPPED",
+      ],
+      CALLED: ["CHECKED_IN", "IN_SERVICE", "CANCELLED", "LEFT", "SKIPPED"],
+      CHECKED_IN: ["CALLED", "IN_SERVICE", "CANCELLED", "LEFT", "SKIPPED"],
+      IN_SERVICE: ["COMPLETED"],
     };
-
-    if (newStatus === QueueStatus.CALLED) {
-      data.calledAt = new Date();
-    } else if (newStatus === QueueStatus.IN_SERVICE) {
-      data.serviceStartAt = new Date();
-      if (staffId) {
-        data.staffId = staffId;
-      }
-    } else if (newStatus === QueueStatus.COMPLETED) {
-      data.completedAt = new Date();
-    }
-
-    const updated = await this.prisma.queueEntry.update({
-      where: { id: entryId },
-      data,
+    const updated = await this.prisma
+      .$transaction(
+        async (tx) => {
+          const entry = await tx.queueEntry.findFirst({
+            where: { id: entryId, tenantId },
+          });
+          if (!entry) throw new NotFoundException("Queue entry not found");
+          if (!allowed[entry.status]?.includes(newStatus))
+            throw new BadRequestException(
+              `Cannot move ${entry.status} to ${newStatus}`,
+            );
+          const assignedStaffId = staffId || entry.staffId;
+          if (newStatus === "IN_SERVICE") {
+            if (!assignedStaffId)
+              throw new BadRequestException(
+                "Assign a professional before starting service",
+              );
+            const staff = await tx.staffProfile.findFirst({
+              where: {
+                id: assignedStaffId,
+                tenantId,
+                active: true,
+                schedules: {
+                  some: { branchId: entry.branchId, isWorkingDay: true },
+                },
+              },
+              include: { services: true },
+            });
+            if (
+              !staff ||
+              !entry.serviceIds.every((id) =>
+                staff.services.some((s) => s.serviceId === id),
+              )
+            )
+              throw new BadRequestException(
+                "Professional is incompatible with this service",
+              );
+            if (
+              await tx.queueEntry.count({
+                where: {
+                  tenantId,
+                  staffId: assignedStaffId,
+                  status: "IN_SERVICE",
+                },
+              })
+            )
+              throw new ConflictException("Professional is already in service");
+            await tx.staffProfile.update({
+              where: { id: assignedStaffId },
+              data: { operationalStatus: "BUSY" },
+            });
+          }
+          const now = new Date();
+          const data: Prisma.QueueEntryUpdateInput = {
+            status: newStatus,
+            ...(newStatus === "CALLED" ? { calledAt: now } : {}),
+            ...(newStatus === "CHECKED_IN" ? { checkInAt: now } : {}),
+            ...(newStatus === "IN_SERVICE"
+              ? {
+                  serviceStartAt: now,
+                  staff: { connect: { id: assignedStaffId! } },
+                }
+              : {}),
+            ...(newStatus === "COMPLETED" ? { completedAt: now } : {}),
+            history: {
+              create: {
+                fromStatus: entry.status,
+                toStatus: newStatus,
+                actorId,
+                actorName,
+                actorRole,
+                reason: `Status changed to ${newStatus}`,
+              },
+            },
+          };
+          const result = await tx.queueEntry.update({
+            where: { id: entryId },
+            data,
+          });
+          if (newStatus === "COMPLETED" && entry.staffId) {
+            const active = await tx.queueEntry.count({
+              where: { staffId: entry.staffId, status: "IN_SERVICE" },
+            });
+            if (!active)
+              await tx.staffProfile.update({
+                where: { id: entry.staffId },
+                data: { operationalStatus: "AVAILABLE" },
+              });
+          }
+          if (entry.appointmentId) {
+            if (newStatus === "IN_SERVICE")
+              await tx.appointment.update({
+                where: { id: entry.appointmentId },
+                data: {
+                  status: "IN_SERVICE",
+                  staffId: assignedStaffId,
+                  serviceStartAt: now,
+                },
+              });
+            else if (newStatus === "COMPLETED")
+              await tx.appointment.update({
+                where: { id: entry.appointmentId },
+                data: { status: "COMPLETED", serviceCompleteAt: now },
+              });
+            else if (["LEFT", "CANCELLED"].includes(newStatus))
+              await tx.appointment.update({
+                where: { id: entry.appointmentId },
+                data: {
+                  status: "CANCELLED",
+                  cancellationReason: "Operational queue visit cancelled",
+                },
+              });
+          }
+          return result;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      )
+      .catch((error) => {
+        if (error.code === "P2034")
+          throw new ConflictException(
+            "This visit or professional changed. Refresh and try again.",
+          );
+        throw error;
+      });
+    await this.auditService.log({
+      tenantId,
+      branchId: updated.branchId,
+      actorId,
+      actorName,
+      actorRole,
+      action: "QUEUE_STATUS_CHANGED",
+      entityType: "QueueEntry",
+      entityId: entryId,
+      after: { status: newStatus },
     });
-
-    // If associated with an appointment, update appointment status too
-    if (entry.appointmentId) {
-      let apptStatus: any = null;
-      if (newStatus === QueueStatus.IN_SERVICE) apptStatus = 'IN_SERVICE';
-      else if (newStatus === QueueStatus.COMPLETED) apptStatus = 'COMPLETED';
-
-      if (apptStatus) {
-        await this.prisma.appointment.update({
-          where: { id: entry.appointmentId },
-          data: { status: apptStatus },
-        });
-      }
-    }
-
-    this.eventsGateway.broadcastQueueUpdated(entry.branchId, {
-      type: 'QUEUE_STATUS_UPDATED',
-      tokenNumber: entry.tokenNumber,
+    this.eventsGateway.broadcastQueueUpdated(updated.branchId, {
+      type: "QUEUE_STATUS_UPDATED",
+      tokenNumber: updated.tokenNumber,
       status: newStatus,
     });
-
-    this.eventsGateway.broadcastTokenUpdated(entry.tokenNumber, {
+    this.eventsGateway.broadcastTokenUpdated(updated.tokenNumber, {
       status: newStatus,
-      tokenNumber: entry.tokenNumber,
+      tokenNumber: updated.tokenNumber,
     });
-
+    this.eventsGateway.broadcastTimelineUpdated(updated.branchId, {
+      type: "QUEUE_STATUS_UPDATED",
+      entryId,
+    });
     return updated;
   }
 }

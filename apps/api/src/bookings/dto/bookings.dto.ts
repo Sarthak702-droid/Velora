@@ -2,6 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsArray,
+  ArrayNotEmpty,
   IsOptional,
   Matches,
   IsEmail,
@@ -25,7 +26,8 @@ export class CreateBookingRequestDto {
   customerEmail?: string;
 
   @IsArray()
-  @IsNotEmpty()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
   serviceIds: string[];
 
   @IsString()
