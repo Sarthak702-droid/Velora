@@ -4166,3 +4166,106 @@ select {
     display: none;
   }
 }
+
+.booking-discovery,
+.booking-calendar,
+.visit-preferences {
+  background: #f6f1e8;
+  border: 1px solid #c7a56a44;
+  border-radius: 14px;
+  padding: 20px;
+  margin: 20px 0;
+}
+.booking-discovery h3,
+.booking-calendar h3,
+.visit-preferences h3 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+.booking-discovery .button {
+  margin-top: 14px;
+}
+.booking-discovery > label {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+  margin: 16px 0;
+}
+.visit-preferences .button {
+  margin: 6px 8px 6px 0;
+  font-size: 12px;
+}
+.visit-preferences [aria-pressed="true"] {
+  background: #a67a40;
+  color: #fff;
+  border-color: #a67a40;
+}
+.booking-calendar p,
+.booking-discovery p,
+.visit-preferences p {
+  line-height: 1.6;
+}
+@media (max-width: 600px) {
+  .booking-calendar .live-receipt-actions {
+    display: grid;
+  }
+  .booking-discovery,
+  .booking-calendar,
+  .visit-preferences {
+    padding: 16px;
+  }
+  .booking-discovery .button {
+    width: 100%;
+  }
+}
+.booking-surprise,
+.queue-travel-planner {
+  border: 1px solid #c7a56a77;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f6f1e8, #fffdfa);
+  padding: 20px;
+  margin: 20px 0;
+}
+.booking-surprise h3,
+.queue-travel-planner h3 {
+  font-size: 24px;
+  margin: 12px 0;
+}
+.booking-surprise p,
+.queue-travel-planner p {
+  line-height: 1.6;
+}
+.booking-surprise [role="status"] {
+  border-top: 1px solid #c7a56a55;
+  margin-top: 18px;
+  padding-top: 8px;
+}
+.queue-travel-planner [role="status"] {
+  margin-top: 18px;
+  color: #865c28;
+}
+.repeat-booking-notice {
+  padding: 16px;
+  background: #f6f1e8;
+  border-left: 3px solid #a67a40;
+  border-radius: 6px;
+  line-height: 1.6;
+}
+.repeat-booking-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.repeat-booking-link {
+  margin: 10px 0 18px;
+}
+@media (max-width: 600px) {
+  .queue-travel-planner,
+  .booking-surprise {
+    padding: 16px;
+  }
+  .queue-travel-planner .live-fields {
+    grid-template-columns: 1fr;
+  }
+}

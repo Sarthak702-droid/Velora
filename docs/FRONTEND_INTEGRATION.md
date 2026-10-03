@@ -65,3 +65,15 @@ The public `/book` route now begins with a clearly labelled dummy customer login
 See [customer booking research and field mapping](CUSTOMER_BOOKING_RESEARCH.md) for primary sources and the address-to-appointment-notes mapping. This browser demo gate does not create real customer accounts or replace backend authorization.
 
 Validation: the 12 existing live integration scenarios passed with the new wizard, including persisted address/preferences, followed by the focused customer login/sign-up regression. All 23 unit/API tests, frontend TypeScript/lint and the optimized frontend production build passed. Production browser captures for login and services at 390/768/1448px are in `docs/screenshots/customer-booking/`; no horizontal overflow or browser runtime errors were observed.
+
+## Appointment convenience update
+
+Added catalogue filters for category/per-service budget/duration, a live seven-day earliest-slot finder with time-of-day preferences, optional stylist visit requests persisted in notes, and confirmed-appointment Google Calendar/ICS export. Calendar export uses the appointment branch and actual timestamps and excludes customer contact details.
+
+Validation: 17 frontend unit tests passed (including six discovery/date/calendar cases); the 13 existing browser scenarios passed, and the new discovery/earliest-slot/request-persistence scenario passed in a focused run. Calendar download was verified against actual persisted booking times. Frontend TypeScript, lint, production build and diff checks passed. Screenshots for discovery and earliest search at 390/768/1448px are in `docs/screenshots/customer-booking/`.
+
+## Surprise discovery, repeat booking and queue planner
+
+Surprise Me suggests a compatible, filtered service that the customer explicitly adds. Book This Again reads the old appointment through its private receipt, selects currently available services/compatible stylist at the original branch, and requires a fresh time and full confirmation. The own-queue travel planner combines the live wait estimate with manually entered travel and buffer time; it is an estimate rather than traffic tracking or a reserved return time.
+
+Verified: all 15 browser integration scenarios passed, including queue planner validation, recommendation selection and unauthorized repeat-booking access. All 19 frontend unit tests passed; TypeScript, lint and production build passed. Production Surprise Me captures at 390/768/1448px are under `docs/screenshots/customer-booking/`.

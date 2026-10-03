@@ -55,6 +55,17 @@ import {
   type Entry,
 } from "@/lib/api-client";
 
+import {
+  filterServices,
+  surpriseService,
+  departurePlan,
+  earliestAvailability,
+  matchesTime,
+  calendarFile,
+  googleCalendarUrl,
+  type TimePreference,
+} from "@/lib/booking-extras";
+
 const slug = process.env.NEXT_PUBLIC_SALON_SLUG || "velora-signature";
 const C = createContext<{
   salon: Salon;
@@ -333,6 +344,13 @@ function Selection({
   setStaffId: (id: string) => void;
 }) {
   const { salon, branch } = useSalon();
+  const [filters, setFilters] = useState({
+    category: "",
+    budget: "",
+    minutes: "",
+  });
+  const [surprise, setSurprise] = useState<Service | null>(null);
+  const [surpriseTried, setSurpriseTried] = useState(false);
   const services = salon.serviceCategories.flatMap((c) => c.services);
   const eligible = salon.staffProfiles.filter(
     (s) =>
@@ -340,6 +358,15 @@ function Selection({
         s.schedules.some((v) => v.branchId === branch.id && v.isWorkingDay)) &&
       ids.every((id) => s.services.some((v) => v.serviceId === id)),
   );
+  const canSuggest = (candidate: string[]) =>
+    salon.staffProfiles.some(
+      (s) =>
+        (!s.schedules ||
+          s.schedules.some(
+            (v) => v.branchId === branch.id && v.isWorkingDay,
+          )) &&
+        candidate.every((id) => s.services.some((v) => v.serviceId === id)),
+    );
   function toggle(id: string) {
     const next = ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id];
     setIds(next);
@@ -351,8 +378,149 @@ function Selection({
         <section className="panel live-section">
           <h2>1. Select Services</h2>
           <p>Choose one or more services for your visit.</p>
+          {step !== undefined && (
+            <div className="booking-discovery">
+              <div>
+                <h3>Make it fit your day</h3>
+                <p>
+                  Find services for your budget and time. Selected services stay
+                  visible.
+                </p>
+              </div>
+              <div className="live-fields">
+                <label>
+                  Service category
+                  <select
+                    value={filters.category}
+                    onChange={(e) =>
+                      setFilters((v) => ({ ...v, category: e.target.value }))
+                    }
+                  >
+                    <option value="">All categories</option>
+                    {salon.serviceCategories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Max price per service ({branch.currency})
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="Any budget"
+                    value={filters.budget}
+                    onChange={(e) =>
+                      setFilters((v) => ({ ...v, budget: e.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Max minutes per service
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Any duration"
+                    value={filters.minutes}
+                    onChange={(e) =>
+                      setFilters((v) => ({ ...v, minutes: e.target.value }))
+                    }
+                  />
+                </label>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() =>
+                  setFilters({ category: "", budget: "", minutes: "" })
+                }
+              >
+                Clear filters
+              </Button>
+              <p role="status">
+                {filterServices(services, ids, filters).length} of{" "}
+                {services.length} services shown
+              </p>
+            </div>
+          )}
+          {step !== undefined && (
+            <div className="booking-surprise">
+              <div className="eyebrow">A little beauty roulette</div>
+              <h3>Not sure what to choose?</h3>
+              <p>
+                Discover a service that fits your filters and can be combined
+                with your selected services. You decide whether to add it.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSurpriseTried(true);
+                  setSurprise(
+                    surpriseService(
+                      services,
+                      ids,
+                      filters,
+                      (candidate) =>
+                        salon.staffProfiles.some(
+                          (s) =>
+                            (!s.schedules ||
+                              s.schedules.some(
+                                (v) =>
+                                  v.branchId === branch.id && v.isWorkingDay,
+                              )) &&
+                            candidate.every((id) =>
+                              s.services.some((v) => v.serviceId === id),
+                            ),
+                        ),
+                      surprise?.id,
+                    ),
+                  );
+                }}
+              >
+                Surprise Me
+              </Button>
+              {surpriseTried && (
+                <div role="status">
+                  {surprise &&
+                  filterServices([surprise], [], filters).length &&
+                  !ids.includes(surprise.id) &&
+                  canSuggest([...ids, surprise.id]) ? (
+                    <>
+                      <h3>{surprise.name}</h3>
+                      <p>{surprise.description}</p>
+                      <p>
+                        {amount(surprise.price, branch)} · {surprise.duration}{" "}
+                        min
+                      </p>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          toggle(surprise.id);
+                          setSurprise(null);
+                          setSurpriseTried(false);
+                        }}
+                      >
+                        Add This Service
+                      </Button>
+                    </>
+                  ) : (
+                    <p>
+                      No new matching suggestion. Adjust your filters or
+                      selected services, then try again.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="service-grid">
-            {services.map((s) => (
+            {(step === undefined
+              ? services
+              : filterServices(services, ids, filters)
+            ).map((s) => (
               <ServiceCard
                 key={s.id}
                 service={s}
@@ -361,6 +529,13 @@ function Selection({
               />
             ))}
           </div>
+          {step !== undefined &&
+            !filterServices(services, ids, filters).length && (
+              <p>
+                No services match. Increase your budget or time limit, or clear
+                the filters.
+              </p>
+            )}
         </section>
       )}
       {(step === undefined || step === 1) && (
@@ -650,7 +825,7 @@ function Booking({
   staff?: boolean;
   onDone?: () => void;
 }) {
-  const { salon, branch } = useSalon();
+  const { salon, branch, setBranch } = useSalon();
   const router = useRouter();
   const query = useQueryClient();
   const [step, setStep] = useState(0);
@@ -693,10 +868,15 @@ function Booking({
       ) => setDetails((v) => ({ ...v, [key]: e.target.value })),
     };
   }
+  const [repeatNotice, setRepeatNotice] = useState("");
+  const [repeatError, setRepeatError] = useState<unknown>(null);
+  const [repeatLoading, setRepeatLoading] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
   const [staffId, setStaffId] = useState("any");
   const [date, setDate] = useState(today(branch.timezone));
   const [slot, setSlot] = useState("");
+  const [timePreference, setTimePreference] = useState<TimePreference>("any");
+  const [preferences, setPreferences] = useState<string[]>([]);
   const eligible = salon.staffProfiles.filter(
     (s) =>
       (!s.schedules ||
@@ -705,13 +885,59 @@ function Booking({
   );
 
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("service");
+    const params = new URLSearchParams(window.location.search);
+    const serviceId = params.get("service");
     if (
-      id &&
-      salon.serviceCategories.some((c) => c.services.some((s) => s.id === id))
+      serviceId &&
+      salon.serviceCategories.some((c) =>
+        c.services.some((s) => s.id === serviceId),
+      )
     )
-      setIds([id]);
-  }, [salon]);
+      setIds([serviceId]);
+    const repeatId = params.get("repeat");
+    if (staff || !repeatId) return;
+    let cancelled = false;
+    setRepeatLoading(true);
+    request<Appointment>(`bookings/${encodeURIComponent(repeatId)}`, salon.id)
+      .then((a) => {
+        if (cancelled) return;
+        if (a.branchId !== branch.id) {
+          if (!salon.branches.some((b) => b.id === a.branchId))
+            throw Error("The original branch is no longer available.");
+          setBranch(a.branchId);
+          return;
+        }
+        const catalogue = salon.serviceCategories.flatMap((c) => c.services);
+        const available = a.services
+          .map((s) => s.serviceId)
+          .filter((id) => catalogue.some((s) => s.id === id));
+        setIds(available);
+        const compatible = salon.staffProfiles.some(
+          (s) =>
+            s.id === a.staffId &&
+            (!s.schedules ||
+              s.schedules.some(
+                (v) => v.branchId === branch.id && v.isWorkingDay,
+              )) &&
+            available.every((id) => s.services.some((v) => v.serviceId === id)),
+        );
+        setStaffId(compatible && a.staffId ? a.staffId : "any");
+        setRepeatNotice(
+          available.length === a.services.length
+            ? "Your previous services are selected. Review today's prices and choose a new time."
+            : "Some previous services are unavailable. Review the remaining selection or choose new services.",
+        );
+      })
+      .catch((error) => {
+        if (!cancelled) setRepeatError(error);
+      })
+      .finally(() => {
+        if (!cancelled) setRepeatLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [salon, branch.id, staff, setBranch]);
   const slots = useQuery({
     queryKey: ["slots", salon.id, branch.id, ids, date, staffId],
     enabled: ids.length > 0,
@@ -722,6 +948,33 @@ function Booking({
       ),
     staleTime: 0,
     retry: false,
+  });
+  const earliest = useMutation({
+    mutationFn: (input: {
+      date: string;
+      ids: string[];
+      staffId: string;
+      preference: TimePreference;
+    }) =>
+      earliestAvailability(input.date, input.preference, (day) =>
+        request<Slot[]>(
+          `bookings/availability?${qs({ branchId: branch.id, serviceIds: input.ids.join(","), date: day, staffId: input.staffId === "any" ? undefined : input.staffId })}`,
+          salon.id,
+        ),
+      ),
+    onSuccess: (found, input) => {
+      if (
+        input.date !== date ||
+        input.ids.join(",") !== ids.join(",") ||
+        input.staffId !== staffId ||
+        input.preference !== timePreference
+      )
+        return;
+      if (found) {
+        setDate(found.date);
+        setSlot(found.slot.time);
+      }
+    },
   });
   const selected = salon.serviceCategories
     .flatMap((c) => c.services)
@@ -802,6 +1055,9 @@ function Booking({
               notes: [
                 `Customer address: ${details.address.trim()}, ${details.city.trim()}, ${details.postalCode.trim()}, ${details.country.trim()}`,
                 `Preferred contact: ${details.contact}. First visit: ${details.firstVisit}.`,
+                ...(preferences.length
+                  ? [`Visit requests: ${preferences.join("; ")}`]
+                  : []),
                 details.notes.trim(),
               ]
                 .filter(Boolean)
@@ -838,7 +1094,9 @@ function Booking({
                   <button
                     key={label}
                     type="button"
-                    disabled={i > step || booking.isPending}
+                    disabled={
+                      i > step || booking.isPending || earliest.isPending
+                    }
                     aria-current={i === step ? "step" : undefined}
                     onClick={() => setStep(i)}
                   >
@@ -852,19 +1110,33 @@ function Booking({
               </p>
             </>
           )}
-          <Selection
-            step={staff ? undefined : step}
-            ids={ids}
-            setIds={(v) => {
-              setIds(v);
-              setSlot("");
-            }}
-            staffId={staffId}
-            setStaffId={(v) => {
-              setStaffId(v);
-              setSlot("");
-            }}
-          />
+          {repeatLoading ? (
+            <p role="status">Loading your previous visit…</p>
+          ) : (
+            repeatNotice && (
+              <p className="repeat-booking-notice" role="status">
+                {repeatNotice}
+              </p>
+            )
+          )}
+          <ErrorNotice error={repeatError} />
+          <fieldset className="repeat-booking-fields" disabled={repeatLoading}>
+            <Selection
+              step={staff ? undefined : step}
+              ids={ids}
+              setIds={(v) => {
+                setIds(v);
+                setSlot("");
+                earliest.reset();
+              }}
+              staffId={staffId}
+              setStaffId={(v) => {
+                setStaffId(v);
+                setSlot("");
+                earliest.reset();
+              }}
+            />
+          </fieldset>
           {(staff || step === 2) && (
             <section className="panel live-section">
               <h2>3. Select Date & Time</h2>
@@ -872,38 +1144,103 @@ function Booking({
                 Appointment date
                 <input
                   type="date"
+                  disabled={earliest.isPending}
                   min={today(branch.timezone)}
                   value={date}
                   onChange={(e) => {
                     setDate(e.target.value);
                     setSlot("");
+                    earliest.reset();
                   }}
                   required
                 />
               </label>
+              {!staff && (
+                <div className="booking-discovery">
+                  <h3>Let us find your next free moment</h3>
+                  <p>
+                    Search seven days from your selected date, using live
+                    availability for your services and stylist.
+                  </p>
+                  <label>
+                    Preferred time of day
+                    <select
+                      disabled={earliest.isPending}
+                      value={timePreference}
+                      onChange={(e) => {
+                        setTimePreference(e.target.value as TimePreference);
+                        setSlot("");
+                        earliest.reset();
+                      }}
+                    >
+                      <option value="any">Any time</option>
+                      <option value="morning">Morning · before 12 PM</option>
+                      <option value="afternoon">Afternoon · 12–5 PM</option>
+                      <option value="evening">Evening · after 5 PM</option>
+                    </select>
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={
+                      !ids.length ||
+                      earliest.isPending ||
+                      !date ||
+                      date < today(branch.timezone)
+                    }
+                    onClick={() =>
+                      earliest.mutate({
+                        date,
+                        ids: [...ids],
+                        staffId,
+                        preference: timePreference,
+                      })
+                    }
+                  >
+                    {earliest.isPending
+                      ? "Finding your appointment…"
+                      : "Find My Earliest Appointment"}
+                  </Button>
+                  <ErrorNotice error={earliest.error} />
+                  {earliest.isSuccess && (
+                    <p role="status">
+                      {earliest.data
+                        ? `Found ${earliest.data.date} at ${earliest.data.slot.time}. Review this time before continuing.`
+                        : "No matching appointment in these seven days. Try another date or time preference."}
+                    </p>
+                  )}
+                </div>
+              )}
               <ErrorNotice error={slots.error} />
               {slots.isFetching && (
                 <p role="status">Checking available times…</p>
               )}
               <div className="live-slots">
-                {slots.data?.map((s) => (
-                  <button
-                    key={s.time}
-                    type="button"
-                    aria-pressed={slot === s.time}
-                    className={slot === s.time ? "selected" : ""}
-                    onClick={() => setSlot(s.time)}
-                  >
-                    {s.time}
-                  </button>
-                ))}
+                {slots.data
+                  ?.filter((s) => staff || matchesTime(s.time, timePreference))
+                  .map((s) => (
+                    <button
+                      key={s.time}
+                      type="button"
+                      disabled={earliest.isPending}
+                      aria-pressed={slot === s.time}
+                      className={slot === s.time ? "selected" : ""}
+                      onClick={() => setSlot(s.time)}
+                    >
+                      {s.time}
+                    </button>
+                  ))}
               </div>
-              {ids.length > 0 && slots.data?.length === 0 && (
-                <p>
-                  No availability on this date. Try a different date or service
-                  combination.
-                </p>
-              )}
+              {ids.length > 0 &&
+                slots.data &&
+                !slots.data.filter(
+                  (s) => staff || matchesTime(s.time, timePreference),
+                ).length && (
+                  <p>
+                    No availability on this date. Try a different date or
+                    service combination.
+                  </p>
+                )}
             </section>
           )}
           {staff ? (
@@ -1021,6 +1358,34 @@ function Booking({
                         choose Phone.
                       </p>
                     )}
+                  <div className="visit-preferences">
+                    <h3>Make this visit yours</h3>
+                    <p>
+                      Optional requests for your stylist; the salon will confirm
+                      what it can accommodate.
+                    </p>
+                    {[
+                      "Quiet appointment",
+                      "Explain each step",
+                      "Help me choose a style",
+                    ].map((label) => (
+                      <Button
+                        key={label}
+                        type="button"
+                        variant="outline"
+                        aria-pressed={preferences.includes(label)}
+                        onClick={() =>
+                          setPreferences((v) =>
+                            v.includes(label)
+                              ? v.filter((p) => p !== label)
+                              : [...v, label],
+                          )
+                        }
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
                   <p className="live-policy">
                     Contact preferences are recorded with your booking. No SMS
                     or email is sent by this demo login.
@@ -1042,6 +1407,9 @@ function Booking({
                     Preferred contact: {details.contact} · First visit:{" "}
                     {details.firstVisit}
                   </p>
+                  {preferences.length > 0 && (
+                    <p>Visit requests: {preferences.join(" · ")}</p>
+                  )}
                   {details.notes && <p>{details.notes}</p>}
                   <p>
                     Your appointment is at {branch.name}, {branch.address},{" "}
@@ -1070,7 +1438,7 @@ function Booking({
                     type="button"
                     variant="outline"
                     onClick={() => setStep((v) => v - 1)}
-                    disabled={booking.isPending}
+                    disabled={booking.isPending || earliest.isPending}
                   >
                     Back
                   </Button>
@@ -1219,6 +1587,96 @@ function JoinQueue({
     </form>
   );
 }
+function QueueTravelPlanner({
+  status,
+  updatedAt,
+}: {
+  status: QueueStatus;
+  updatedAt: number;
+}) {
+  const { salon, branch } = useSalon();
+  const [travel, setTravel] = useState("15");
+  const [buffer, setBuffer] = useState("5");
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+  const valid =
+    travel !== "" &&
+    buffer !== "" &&
+    Number(travel) >= 0 &&
+    Number(travel) <= 180 &&
+    Number(buffer) >= 0 &&
+    Number(buffer) <= 30;
+  const plan = departurePlan(
+    updatedAt,
+    status.estimatedWaitMinutes,
+    Number(travel),
+    Number(buffer),
+    now,
+  );
+  const zone =
+    salon.branches.find((b) => b.name === status.branchName)?.timezone ||
+    branch.timezone;
+  const clock = (value: number) =>
+    new Intl.DateTimeFormat("en", {
+      timeZone: zone,
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(value);
+  return (
+    <section className="queue-travel-planner">
+      <div className="eyebrow">A little more time for you</div>
+      <h3>When should I head over?</h3>
+      <div className="live-fields">
+        <label>
+          Your travel time (minutes)
+          <input
+            type="number"
+            min="0"
+            max="180"
+            value={travel}
+            onChange={(e) => setTravel(e.target.value)}
+          />
+        </label>
+        <label>
+          Arrival buffer (minutes)
+          <input
+            type="number"
+            min="0"
+            max="30"
+            value={buffer}
+            onChange={(e) => setBuffer(e.target.value)}
+          />
+        </label>
+      </div>
+      {valid ? (
+        <div role="status">
+          <strong>
+            {status.status === "CALLED"
+              ? "Your turn has been called. Contact the front desk now."
+              : plan.leaveNow
+                ? "Head over now"
+                : `Aim to leave by ${clock(plan.leaveAt)}`}
+          </strong>
+          <p>
+            Estimated turn around {clock(plan.expectedAt)} ({zone}).
+          </p>
+        </div>
+      ) : (
+        <p role="alert">
+          Enter travel time from 0–180 and buffer from 0–30 minutes.
+        </p>
+      )}
+      <p className="live-policy">
+        Planning estimate only; your turn can move earlier. Stay nearby and
+        watch your live status. Travel time is entered by you, not measured from
+        traffic.
+      </p>
+    </section>
+  );
+}
 function Queue() {
   const { salon, branch } = useSalon();
   const ids = useReceipts("queue");
@@ -1279,6 +1737,13 @@ function Queue() {
             <span className="live-status">{human(s.status)}</span>
             <h3>{s.guestsAhead} guests ahead of you</h3>
             <p>Estimated wait: {s.estimatedWaitMinutes} minutes</p>
+            {["WAITING", "CALLED"].includes(s.status) && (
+              <QueueTravelPlanner
+                key={id}
+                status={s}
+                updatedAt={status.dataUpdatedAt}
+              />
+            )}
             <hr />
             <p>Selected services: {s.services.join(", ")}</p>
             <p>Preferred stylist: {s.staffName}</p>
@@ -1340,6 +1805,21 @@ function BookingReceipt({ id }: { id: string }) {
     refetchInterval: 5000,
   });
   const a = booking.data;
+  const bookingBranch =
+    salon.branches.find((b) => b.id === a?.branchId) || branch;
+  function downloadCalendar() {
+    if (!a) return;
+    const url = URL.createObjectURL(
+      new Blob([calendarFile(a, bookingBranch)], {
+        type: "text/calendar;charset=utf-8",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "velora-appointment.ics";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   const slots = useQuery({
     queryKey: ["reschedule-slots", id, date],
     enabled: editing && !!a,
@@ -1366,10 +1846,38 @@ function BookingReceipt({ id }: { id: string }) {
             <span className="live-status">{human(a.status)}</span>
           </div>
           <p>
-            {at(a.startTime, branch)} · {a.staff?.name} ·{" "}
-            {amount(a.totalPrice, branch)}
+            {at(a.startTime, bookingBranch)} · {a.staff?.name} ·{" "}
+            {amount(a.totalPrice, bookingBranch)}
           </p>
           <p>Booking reference: {a.id}</p>
+          <Link
+            className="button outline repeat-booking-link"
+            href={`/book?${qs({ repeat: a.id })}`}
+          >
+            Book This Again →
+          </Link>
+          {a.status === "CONFIRMED" && (
+            <div className="booking-calendar">
+              <h3>Keep your day flowing</h3>
+              <p>
+                Save this appointment to your calendar. After rescheduling,
+                update the saved event too.
+              </p>
+              <div className="live-receipt-actions">
+                <a
+                  className="button outline"
+                  target="_blank"
+                  rel="noreferrer"
+                  href={googleCalendarUrl(a, bookingBranch)}
+                >
+                  Add to Google Calendar
+                </a>
+                <Button variant="outline" onClick={downloadCalendar}>
+                  Download Calendar File
+                </Button>
+              </div>
+            </div>
+          )}
           {a.status === "CONFIRMED" && (
             <div className="live-receipt-actions">
               <Button variant="outline" onClick={() => setEditing(!editing)}>

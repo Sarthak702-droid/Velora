@@ -113,6 +113,19 @@ test("booking persists in PostgreSQL, survives refresh, reschedules, and cancels
   page,
 }) => {
   const id = await book(page, "Integration Booking");
+  await expect(
+    page.getByRole("link", { name: "Add to Google Calendar" }),
+  ).toHaveAttribute("href", /calendar.google.com/);
+  const downloaded = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download Calendar File" }).click();
+  const calendar = await downloaded;
+  expect(calendar.suggestedFilename()).toBe("velora-appointment.ics");
+  const calendarPath = await calendar.path();
+  const calendarText = fs.readFileSync(calendarPath!, "utf8");
+  expect(calendarText).toContain("BEGIN:VEVENT");
+  expect(calendarText).toContain(`${future(7).replaceAll("-", "")}T033000Z`);
+  expect(calendarText).not.toContain("Integration Booking");
+
   await page.reload();
   await expect(page.getByText("Booking reference:")).toBeVisible();
   const cookie = (await page.context().cookies()).find(
@@ -206,6 +219,20 @@ test("queue private receipt, cross-tab updates, reception calling and completion
   await page.getByRole("button", { name: "Join Queue", exact: true }).click();
   await expect(page).toHaveURL(/\/queue$/);
   await expect(page.getByText("waiting", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "When should I head over?" }),
+  ).toBeVisible();
+  await page.getByLabel("Your travel time (minutes)").fill("180");
+  await expect(page.getByText("Head over now", { exact: true })).toBeVisible();
+  await page.getByLabel("Arrival buffer (minutes)").fill("31");
+  await expect(
+    page.getByText(
+      "Enter travel time from 0–180 and buffer from 0–30 minutes.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.getByLabel("Arrival buffer (minutes)").fill("5");
+
   const id = await page.evaluate(
     () =>
       JSON.parse(
@@ -640,4 +667,126 @@ test("header booking requires demo login; sign-up, validation, back navigation a
   await expect(
     page.getByRole("heading", { name: "Welcome back" }),
   ).toBeVisible();
+});
+
+test("discovery filters, preferred-time earliest finder and visit requests", async ({
+  page,
+}) => {
+  await page.goto("/book");
+  await customerLogin(page);
+  await page.getByLabel("Max price per service (INR)").fill("700");
+  await page.getByLabel("Max minutes per service").fill("40");
+  await expect(
+    page.getByRole("button", { name: /Integration Hair Spa/ }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: /Integration Haircut/ }).click();
+  await page.getByLabel("Max price per service (INR)").fill("1");
+  await expect(
+    page.getByRole("button", { name: /Integration Haircut/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await nextStep(page);
+  await page.getByLabel("Preferred professional").selectOption(fixture.staffId);
+  await nextStep(page);
+  await page.getByLabel("Appointment date").fill(future(18));
+  await page.getByLabel("Preferred time of day").selectOption("afternoon");
+  await page
+    .getByRole("button", { name: "Find My Earliest Appointment" })
+    .click();
+  await expect(
+    page.getByText(
+      `Found ${future(18)} at 12:00. Review this time before continuing.`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "12:00", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "09:00", exact: true }),
+  ).toHaveCount(0);
+  await nextStep(page);
+  await page.getByLabel("Your name", { exact: true }).fill("Discovery Guest");
+  await page.getByLabel("Phone number", { exact: true }).fill("+910000000166");
+  await nextStep(page);
+  await page.getByLabel("Street address").fill("10 Demo Road");
+  await page.getByLabel("City", { exact: true }).fill("Mumbai");
+  await page.getByLabel("Postal code").fill("400001");
+  await page.getByLabel("Country", { exact: true }).fill("India");
+  await page
+    .getByRole("button", { name: "Quiet appointment", exact: true })
+    .click();
+  await nextStep(page);
+  await expect(
+    page.getByText("Visit requests: Quiet appointment", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: /Confirm Booking/ }).click();
+  await expect(page).toHaveURL(/customer\/bookings/);
+  const id = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("velora-live-booking") || "[]")[0],
+  );
+  const saved = await call(page, `bookings/${id}`);
+  expect(saved.json.data.notes).toContain("Visit requests: Quiet appointment");
+});
+
+test("surprise discovery respects budget, explicitly adds services and repeat booking rechecks", async ({
+  page,
+}) => {
+  await page.goto("/book");
+  await customerLogin(page);
+  await page.getByLabel("Max price per service (INR)").fill("700");
+  await page.getByRole("button", { name: "Surprise Me", exact: true }).click();
+  await expect(
+    page
+      .locator(".booking-surprise")
+      .getByRole("heading", { name: "Integration Haircut", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Integration Haircut/ }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await page
+    .getByRole("button", { name: "Add This Service", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: /Integration Haircut/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Surprise Me", exact: true }).click();
+  await expect(page.locator(".booking-surprise")).toContainText(
+    "No new matching suggestion",
+  );
+  // Create a real private receipt, then repeat without duplicating its reservation.
+  await page.getByRole("button", { name: "Log out", exact: true }).click();
+  const id = await book(page, "Repeat Customer", 22);
+  await page.getByRole("link", { name: "Book This Again" }).click();
+  await expect(
+    page.getByText(
+      "Your previous services are selected. Review today's prices and choose a new time.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Integration Haircut/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await nextStep(page);
+  await expect(page.getByLabel("Preferred professional")).toHaveValue(
+    fixture.staffId,
+  );
+  await nextStep(page);
+  await expect(
+    page.getByRole("button", { name: "Continue →", exact: true }),
+  ).toBeDisabled();
+  const original = await call(page, `bookings/${id}`);
+  expect(original.json.data.status).toBe("CONFIRMED");
+  const stranger = await page.context().browser()!.newContext();
+  const strangerPage = await stranger.newPage();
+  await strangerPage.goto(new URL(`/book?repeat=${id}`, page.url()).toString());
+  await customerLogin(strangerPage);
+  await expect(
+    strangerPage.locator(".booking-layout .live-error"),
+  ).toBeVisible();
+  await expect(
+    strangerPage.getByRole("button", { name: /Integration Haircut/ }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await stranger.close();
 });
