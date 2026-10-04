@@ -202,13 +202,13 @@ function Professional({ staff }: { staff: Staff }) {
         <span className="stars">
           ★ {staff.rating} ({staff.reviewCount})
         </span>
-        <p>{human(staff.operationalStatus)}</p>
+        <p className="live-professional-status">{human(staff.operationalStatus)}</p>
       </section>
     </div>
   );
 }
 function Home() {
-  const { salon } = useSalon();
+  const { salon, branch } = useSalon();
   return (
     <>
       <section className="home-hero">
@@ -275,26 +275,36 @@ function Home() {
           </Link>
         </div>
         <div className="category-grid">
-          {salon.serviceCategories.map((c) => (
-            <Link
-              className="category-card"
-              href={`/services?category=${c.id}`}
-              key={c.id}
-            >
-              <img
-                src={
-                  c.services[0]
-                    ? image(c.services[0], salon.serviceCategories)
-                    : "/photos/hair.webp"
-                }
-                alt=""
-              />
-              <div>
-                <h3>{c.name}</h3>
-                <p>{c.services.length} services available</p>
-              </div>
-            </Link>
-          ))}
+          {salon.serviceCategories.map((c) => {
+            const minPrice = c.services.length > 0 
+              ? Math.min(...c.services.map(s => s.price))
+              : 0;
+            return (
+              <Link
+                className="category-card"
+                href={`/services?category=${c.id}`}
+                key={c.id}
+              >
+                <img
+                  src={
+                    c.services[0]
+                      ? image(c.services[0], salon.serviceCategories)
+                      : "/photos/hair.webp"
+                  }
+                  alt=""
+                />
+                <div>
+                  <h3>{c.name}</h3>
+                  <p>{c.services.length} services available</p>
+                  {minPrice > 0 && (
+                    <span className="price-badge">
+                      From {amount(minPrice, branch)}
+                    </span>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
         </div>
         <div className="editorial">
           <div className="eyebrow">Our professionals</div>
